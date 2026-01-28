@@ -1,5 +1,4 @@
 import 'dart:async';
-import 'package:flutter/foundation.dart';
 import 'package:flutter/material.dart';
 import 'package:geolocator/geolocator.dart';
 import 'package:google_maps_flutter/google_maps_flutter.dart';
@@ -28,7 +27,7 @@ class TrackingProvider extends ChangeNotifier {
   String? _errorMessage;
 
   // Route and ETA data
-  List<LatLng> _routePoints = [];
+  final List<LatLng> _routePoints = [];
   double _distanceInKm = 0.0;
   int _estimatedArrivalTimeSeconds = 0; // ETA in seconds
   double _averageSpeed = 0.0; // Speed in km/h
@@ -372,7 +371,7 @@ class TrackingProvider extends ChangeNotifier {
               BitmapDescriptor.defaultMarkerWithHue(BitmapDescriptor.hueGreen),
           infoWindow: InfoWindow(
             title: 'Rescuer Location',
-            snippet: 'On the way • ${formattedETA} • ${formattedDistance}',
+            snippet: 'On the way • \$formattedETA • \$formattedDistance',
           ),
           flat: true,
           anchor: const Offset(0.5, 0.5),
