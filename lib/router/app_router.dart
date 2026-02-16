@@ -64,7 +64,11 @@ class AppRouter {
       ),
       GoRoute(
         path: '/create-request',
-        builder: (context, state) => const CreateRequestScreen(),
+        builder: (context, state) {
+          final problemType =
+              state.uri.queryParameters['problem'] ?? 'General Assistance';
+          return CreateRequestScreen(problemType: problemType);
+        },
       ),
       GoRoute(
         path: '/offers',

@@ -3,7 +3,9 @@ import 'package:go_router/go_router.dart';
 import '../../core/theme/app_theme.dart';
 
 class CreateRequestScreen extends StatefulWidget {
-  const CreateRequestScreen({super.key});
+  final String problemType;
+
+  const CreateRequestScreen({super.key, required this.problemType});
 
   @override
   State<CreateRequestScreen> createState() => _CreateRequestScreenState();
@@ -22,9 +24,9 @@ class _CreateRequestScreenState extends State<CreateRequestScreen> {
         child: Column(
           crossAxisAlignment: CrossAxisAlignment.start,
           children: [
-            const Text(
-              'Selected Problem: Puncture',
-              style: TextStyle(fontSize: 18, fontWeight: FontWeight.bold),
+            Text(
+              'Selected Problem: ${widget.problemType}',
+              style: const TextStyle(fontSize: 18, fontWeight: FontWeight.bold),
             ),
             const SizedBox(height: 24),
             const Text(

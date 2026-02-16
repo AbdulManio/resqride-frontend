@@ -10,53 +10,83 @@ class RoleSelectionScreen extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     return Scaffold(
-      body: SafeArea(
-        child: Padding(
-          padding: const EdgeInsets.all(24.0),
-          child: Column(
-            mainAxisAlignment: MainAxisAlignment.center,
-            children: [
-              const Icon(
-                Icons.emergency_share,
-                size: 100,
-                color: AppColors.primary,
-              ),
-              const SizedBox(height: 24),
-              Text(
-                'Rescue Ride',
-                style: Theme.of(context).textTheme.headlineLarge?.copyWith(
-                  fontWeight: FontWeight.bold,
-                  color: AppColors.secondary,
-                ),
-              ),
-              const SizedBox(height: 8),
-              Text(
-                'Professional Vehicle Assistance',
-                style: Theme.of(
-                  context,
-                ).textTheme.bodyLarge?.copyWith(color: AppColors.textSecondary),
-              ),
-              const SizedBox(height: 48),
-              _RoleCard(
-                title: 'I need Help',
-                subtitle: 'Find a rescuer near you',
-                icon: Icons.person,
-                onTap: () {
-                  context.read<AuthProvider>().setRole(UserRole.customer);
-                  context.push('/login');
-                },
-              ),
-              const SizedBox(height: 16),
-              _RoleCard(
-                title: 'I am a Rescuer',
-                subtitle: 'Help others and earn money',
-                icon: Icons.handyman,
-                onTap: () {
-                  context.read<AuthProvider>().setRole(UserRole.rescuer);
-                  context.push('/login');
-                },
-              ),
+      body: Container(
+        decoration: BoxDecoration(
+          gradient: LinearGradient(
+            begin: Alignment.topCenter,
+            end: Alignment.bottomCenter,
+            colors: [
+              AppColors.primary,
+              AppColors.primary.withOpacity(0.8),
             ],
+          ),
+        ),
+        child: SafeArea(
+          child: Padding(
+            padding: const EdgeInsets.all(24.0),
+            child: Column(
+              mainAxisAlignment: MainAxisAlignment.center,
+              children: [
+                const Spacer(),
+                // Logo Icon - Simple WiFi + Location Pin
+                Column(
+                  children: [
+                    Icon(
+                      Icons.wifi,
+                      size: 60,
+                      color: Colors.white.withOpacity(0.9),
+                    ),
+                    const Icon(
+                      Icons.location_on,
+                      size: 60,
+                      color: Colors.white,
+                    ),
+                  ],
+                ),
+                const SizedBox(height: 32),
+                const Text(
+                  'RescueRide',
+                  style: TextStyle(
+                    fontSize: 36,
+                    fontWeight: FontWeight.bold,
+                    color: Colors.white,
+                  ),
+                ),
+                const SizedBox(height: 8),
+                const Text(
+                  'Professional Vehicle Assistance',
+                  style: TextStyle(
+                    fontSize: 16,
+                    color: Colors.white70,
+                  ),
+                ),
+                const Spacer(),
+                _RoleCard(
+                  title: 'I need Help',
+                  subtitle: 'Find a rescuer near you',
+                  icon: Icons.person,
+                  backgroundColor: AppColors.primary,
+                  isFirst: true,
+                  onTap: () {
+                    context.read<AuthProvider>().setRole(UserRole.customer);
+                    context.push('/login');
+                  },
+                ),
+                const SizedBox(height: 16),
+                _RoleCard(
+                  title: 'I am a Rescuer',
+                  subtitle: 'Help others and earn money',
+                  icon: Icons.build,
+                  backgroundColor: AppColors.primary.withOpacity(0.6),
+                  isFirst: true,
+                  onTap: () {
+                    context.read<AuthProvider>().setRole(UserRole.rescuer);
+                    context.push('/login');
+                  },
+                ),
+                const SizedBox(height: 48),
+              ],
+            ),
           ),
         ),
       ),
@@ -68,28 +98,33 @@ class _RoleCard extends StatelessWidget {
   final String title;
   final String subtitle;
   final IconData icon;
+  final Color backgroundColor;
+  final bool isFirst;
   final VoidCallback onTap;
 
   const _RoleCard({
     required this.title,
     required this.subtitle,
     required this.icon,
+    required this.backgroundColor,
+    required this.isFirst,
     required this.onTap,
   });
 
   @override
   Widget build(BuildContext context) {
+    final bool isDark = isFirst;
     return InkWell(
       onTap: onTap,
       borderRadius: BorderRadius.circular(16),
       child: Container(
-        padding: const EdgeInsets.all(24),
+        padding: const EdgeInsets.symmetric(horizontal: 24, vertical: 20),
         decoration: BoxDecoration(
-          color: Colors.white,
+          color: backgroundColor,
           borderRadius: BorderRadius.circular(16),
           boxShadow: [
             BoxShadow(
-              color: Colors.black.withAlpha(13), // 0.05 * 255 ≈ 13
+              color: Colors.black.withOpacity(0.1),
               blurRadius: 10,
               offset: const Offset(0, 4),
             ),
@@ -100,10 +135,16 @@ class _RoleCard extends StatelessWidget {
             Container(
               padding: const EdgeInsets.all(12),
               decoration: BoxDecoration(
-                color: AppColors.primary.withAlpha(51), // 0.2 * 255 ≈ 51
+                color: isDark
+                    ? Colors.white.withOpacity(0.2)
+                    : AppColors.primary.withOpacity(0.1),
                 shape: BoxShape.circle,
               ),
-              child: Icon(icon, color: AppColors.secondary, size: 32),
+              child: Icon(
+                icon,
+                color: isDark ? Colors.white : AppColors.primary,
+                size: 28,
+              ),
             ),
             const SizedBox(width: 16),
             Expanded(
@@ -112,23 +153,27 @@ class _RoleCard extends StatelessWidget {
                 children: [
                   Text(
                     title,
-                    style: const TextStyle(
-                      fontSize: 18,
+                    style: TextStyle(
+                      fontSize: 20,
                       fontWeight: FontWeight.bold,
-                      color: AppColors.secondary,
+                      color: isDark ? Colors.white : AppColors.secondary,
                     ),
                   ),
+                  const SizedBox(height: 4),
                   Text(
                     subtitle,
-                    style: const TextStyle(color: AppColors.textSecondary),
+                    style: TextStyle(
+                      fontSize: 14,
+                      color: isDark ? Colors.white70 : AppColors.textSecondary,
+                    ),
                   ),
                 ],
               ),
             ),
-            const Icon(
+            Icon(
               Icons.arrow_forward_ios,
-              size: 16,
-              color: AppColors.textSecondary,
+              size: 20,
+              color: isDark ? Colors.white70 : AppColors.textSecondary,
             ),
           ],
         ),

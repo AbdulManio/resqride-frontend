@@ -18,54 +18,87 @@ class _LoginScreenState extends State<LoginScreen> {
   Widget build(BuildContext context) {
     final authProvider = context.read<AuthProvider>();
     return Scaffold(
-      appBar: AppBar(
-        title: const Text('Login'),
-        leading: IconButton(
-          icon: const Icon(Icons.arrow_back),
-          onPressed: () => context.pop(),
+      body: Container(
+        decoration: BoxDecoration(
+          gradient: LinearGradient(
+            begin: Alignment.topCenter,
+            end: Alignment.bottomCenter,
+            colors: [
+              AppColors.primary,
+              AppColors.primary.withOpacity(0.8),
+            ],
+          ),
         ),
-      ),
-      body: Padding(
-        padding: const EdgeInsets.all(24.0),
-        child: Column(
-          crossAxisAlignment: CrossAxisAlignment.start,
-          children: [
-            const Text(
-              'Enter your mobile number',
-              style: TextStyle(
-                fontSize: 24,
-                fontWeight: FontWeight.bold,
-                color: AppColors.secondary,
-              ),
+        child: SafeArea(
+          child: Padding(
+            padding: const EdgeInsets.all(24.0),
+            child: Column(
+              crossAxisAlignment: CrossAxisAlignment.start,
+              children: [
+                IconButton(
+                  icon: const Icon(Icons.arrow_back, color: Colors.white),
+                  onPressed: () => context.pop(),
+                ),
+                const SizedBox(height: 32),
+                const Text(
+                  'Enter your mobile number',
+                  style: TextStyle(
+                    fontSize: 28,
+                    fontWeight: FontWeight.bold,
+                    color: Colors.white,
+                  ),
+                ),
+                const SizedBox(height: 12),
+                const Text(
+                  'We will send a 4-digit code to verify your account',
+                  style: TextStyle(color: Colors.white70, fontSize: 16),
+                ),
+                const SizedBox(height: 48),
+                Container(
+                  decoration: BoxDecoration(
+                    color: Colors.white,
+                    borderRadius: BorderRadius.circular(12),
+                  ),
+                  child: TextField(
+                    controller: _phoneController,
+                    keyboardType: TextInputType.phone,
+                    style: const TextStyle(fontSize: 18),
+                    decoration: InputDecoration(
+                      hintText: 'Mobile Number',
+                      prefixIcon: const Icon(Icons.phone_android,
+                          color: AppColors.primary),
+                      prefixText: '+92 ',
+                      border: OutlineInputBorder(
+                        borderRadius: BorderRadius.circular(12),
+                        borderSide: BorderSide.none,
+                      ),
+                      filled: true,
+                      fillColor: Colors.white,
+                    ),
+                  ),
+                ),
+                const Spacer(),
+                ElevatedButton(
+                  onPressed: () {
+                    if (_phoneController.text.isNotEmpty) {
+                      authProvider.updateProfile(
+                          phoneNumber: '+92 ${_phoneController.text}');
+                      context.push('/otp');
+                    }
+                  },
+                  style: ElevatedButton.styleFrom(
+                    backgroundColor: Colors.white,
+                    foregroundColor: AppColors.primary,
+                    minimumSize: const Size.fromHeight(56),
+                  ),
+                  child: const Text('Send Code',
+                      style:
+                          TextStyle(fontSize: 18, fontWeight: FontWeight.bold)),
+                ),
+                const SizedBox(height: 24),
+              ],
             ),
-            const SizedBox(height: 8),
-            const Text(
-              'We will send a 4-digit code to verify your account',
-              style: TextStyle(color: AppColors.textSecondary),
-            ),
-            const SizedBox(height: 32),
-            TextField(
-              controller: _phoneController,
-              keyboardType: TextInputType.phone,
-              decoration: const InputDecoration(
-                hintText: 'Mobile Number',
-                prefixIcon: Icon(Icons.phone_android),
-                prefixText: '+92 ',
-              ),
-            ),
-            const Spacer(),
-            ElevatedButton(
-              onPressed: () {
-                if (_phoneController.text.isNotEmpty) {
-                  // Save phone number temporarily (in a real app, this would happen after OTP)
-                  authProvider.updateProfile(
-                      phoneNumber: '+92 ${_phoneController.text}');
-                  context.push('/otp');
-                }
-              },
-              child: const Text('Send Code'),
-            ),
-          ],
+          ),
         ),
       ),
     );

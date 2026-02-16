@@ -350,28 +350,30 @@ class _CustomerDashboardScreenState extends State<CustomerDashboardScreen>
                       _ProblemTile(
                         icon: Icons.tire_repair,
                         label: 'Puncture',
-                        onTap: () => context.push('/create-request'),
+                        onTap: () => _showPunctureOptions(),
                       ),
                       _ProblemTile(
                         icon: Icons.local_gas_station,
                         label: 'Fuel Delivery',
-                        onTap: () => context.push('/create-request'),
+                        onTap: () => _showFuelDeliveryOptions(),
                       ),
                       _ProblemTile(
                         icon: Icons.battery_charging_full,
                         label: 'Battery Jump',
-                        onTap: () => context.push('/create-request'),
+                        onTap: () => context
+                            .push('/create-request?problem=Battery Jump'),
                       ),
                       _ProblemTile(
                         icon: Icons.build,
                         label: 'Minor Repair',
-                        onTap: () => context.push('/create-request'),
+                        onTap: () => _showMinorRepairOptions(),
                       ),
                     ],
                   ),
                   const SizedBox(height: 24),
                   ElevatedButton(
-                    onPressed: () => context.push('/create-request'),
+                    onPressed: () => context
+                        .push('/create-request?problem=General Assistance'),
                     style: ElevatedButton.styleFrom(
                       minimumSize: const Size.fromHeight(48),
                     ),
@@ -528,6 +530,255 @@ class _CustomerDashboardScreenState extends State<CustomerDashboardScreen>
       ),
     );
   }
+
+  void _showPunctureOptions() {
+    showModalBottomSheet(
+      context: context,
+      isScrollControlled: true,
+      backgroundColor: Colors.transparent,
+      builder: (context) => Container(
+        height: MediaQuery.of(context).size.height * 0.4,
+        decoration: const BoxDecoration(
+          color: Colors.white,
+          borderRadius: BorderRadius.vertical(top: Radius.circular(24)),
+        ),
+        padding: const EdgeInsets.all(24),
+        child: Column(
+          children: [
+            Container(
+              width: 40,
+              height: 4,
+              decoration: BoxDecoration(
+                color: Colors.grey[300],
+                borderRadius: BorderRadius.circular(2),
+              ),
+            ),
+            const SizedBox(height: 24),
+            const Text(
+              'Puncture - Select Vehicle Type',
+              style: TextStyle(fontSize: 20, fontWeight: FontWeight.bold),
+            ),
+            const SizedBox(height: 24),
+            Expanded(
+              child: ListView(
+                children: [
+                  _RepairOptionTile(
+                    label: 'Car Puncture',
+                    onTap: () {
+                      Navigator.pop(context);
+                      context.push('/create-request?problem=Puncture - Car');
+                    },
+                  ),
+                  _RepairOptionTile(
+                    label: 'Bike Puncture',
+                    onTap: () {
+                      Navigator.pop(context);
+                      context.push('/create-request?problem=Puncture - Bike');
+                    },
+                  ),
+                ],
+              ),
+            ),
+          ],
+        ),
+      ),
+    );
+  }
+
+  void _showFuelDeliveryOptions() {
+    showModalBottomSheet(
+      context: context,
+      isScrollControlled: true,
+      backgroundColor: Colors.transparent,
+      builder: (context) => Container(
+        height: MediaQuery.of(context).size.height * 0.65,
+        decoration: const BoxDecoration(
+          color: Colors.white,
+          borderRadius: BorderRadius.vertical(top: Radius.circular(24)),
+        ),
+        padding: const EdgeInsets.all(24),
+        child: Column(
+          children: [
+            Container(
+              width: 40,
+              height: 4,
+              decoration: BoxDecoration(
+                color: Colors.grey[300],
+                borderRadius: BorderRadius.circular(2),
+              ),
+            ),
+            const SizedBox(height: 24),
+            const Text(
+              'Fuel Delivery - Select Quantity',
+              style: TextStyle(fontSize: 20, fontWeight: FontWeight.bold),
+            ),
+            const SizedBox(height: 24),
+            Expanded(
+              child: ListView(
+                children: [
+                  _RepairOptionTile(
+                    label: '0.5 Liter',
+                    onTap: () {
+                      Navigator.pop(context);
+                      context.push(
+                          '/create-request?problem=Fuel Delivery - 0.5 Liter');
+                    },
+                  ),
+                  _RepairOptionTile(
+                    label: '1 Liter',
+                    onTap: () {
+                      Navigator.pop(context);
+                      context.push(
+                          '/create-request?problem=Fuel Delivery - 1 Liter');
+                    },
+                  ),
+                  _RepairOptionTile(
+                    label: '2 Liters',
+                    onTap: () {
+                      Navigator.pop(context);
+                      context.push(
+                          '/create-request?problem=Fuel Delivery - 2 Liters');
+                    },
+                  ),
+                  _RepairOptionTile(
+                    label: '3 Liters',
+                    onTap: () {
+                      Navigator.pop(context);
+                      context.push(
+                          '/create-request?problem=Fuel Delivery - 3 Liters');
+                    },
+                  ),
+                  _RepairOptionTile(
+                    label: 'Custom Amount',
+                    onTap: () {
+                      Navigator.pop(context);
+                      _showCustomAmountDialog();
+                    },
+                  ),
+                ],
+              ),
+            ),
+          ],
+        ),
+      ),
+    );
+  }
+
+  void _showCustomAmountDialog() {
+    final TextEditingController customAmountController =
+        TextEditingController();
+    showDialog(
+      context: context,
+      builder: (context) => AlertDialog(
+        title: const Text('Enter Custom Amount'),
+        content: TextField(
+          controller: customAmountController,
+          keyboardType: TextInputType.numberWithOptions(decimal: true),
+          decoration: const InputDecoration(
+            hintText: 'Enter liters (e.g., 5.5)',
+            suffixText: 'Liters',
+          ),
+          autofocus: true,
+        ),
+        actions: [
+          TextButton(
+            onPressed: () => Navigator.pop(context),
+            child: const Text('Cancel'),
+          ),
+          ElevatedButton(
+            onPressed: () {
+              if (customAmountController.text.isNotEmpty) {
+                Navigator.pop(context);
+                context.push(
+                    '/create-request?problem=Fuel Delivery - ${customAmountController.text} Liters');
+              }
+            },
+            child: const Text('Confirm'),
+          ),
+        ],
+      ),
+    );
+  }
+
+  void _showMinorRepairOptions() {
+    showModalBottomSheet(
+      context: context,
+      isScrollControlled: true,
+      backgroundColor: Colors.transparent,
+      builder: (context) => Container(
+        height: MediaQuery.of(context).size.height * 0.6,
+        decoration: const BoxDecoration(
+          color: Colors.white,
+          borderRadius: BorderRadius.vertical(top: Radius.circular(24)),
+        ),
+        padding: const EdgeInsets.all(24),
+        child: Column(
+          children: [
+            Container(
+              width: 40,
+              height: 4,
+              decoration: BoxDecoration(
+                color: Colors.grey[300],
+                borderRadius: BorderRadius.circular(2),
+              ),
+            ),
+            const SizedBox(height: 24),
+            const Text(
+              'Minor Repair - Engine',
+              style: TextStyle(fontSize: 20, fontWeight: FontWeight.bold),
+            ),
+            const SizedBox(height: 24),
+            Expanded(
+              child: ListView(
+                children: [
+                  _RepairOptionTile(
+                    label: 'Minor Coolant Leakage',
+                    onTap: () {
+                      Navigator.pop(context);
+                      context.push(
+                          '/create-request?problem=Minor Repair - Minor Coolant Leakage');
+                    },
+                  ),
+                  _RepairOptionTile(
+                    label: 'Minor Gasket Seepage',
+                    onTap: () {
+                      Navigator.pop(context);
+                      context.push(
+                          '/create-request?problem=Minor Repair - Minor Gasket Seepage');
+                    },
+                  ),
+                  _RepairOptionTile(
+                    label: 'Broken Timing Belt',
+                    onTap: () {
+                      Navigator.pop(context);
+                      context.push(
+                          '/create-request?problem=Minor Repair - Broken Timing Belt');
+                    },
+                  ),
+                  _RepairOptionTile(
+                    label: 'Engine Overheating',
+                    onTap: () {
+                      Navigator.pop(context);
+                      context.push(
+                          '/create-request?problem=Minor Repair - Engine Overheating');
+                    },
+                  ),
+                  _RepairOptionTile(
+                    label: 'Other',
+                    onTap: () {
+                      Navigator.pop(context);
+                      context
+                          .push('/create-request?problem=Minor Repair - Other');
+                    },
+                  ),
+                ],
+              ),
+            ),
+          ],
+        ),
+      ),
+    );
+  }
 }
 
 class _ProblemTile extends StatelessWidget {
@@ -565,6 +816,39 @@ class _ProblemTile extends StatelessWidget {
             ),
           ],
         ),
+      ),
+    );
+  }
+}
+
+class _RepairOptionTile extends StatelessWidget {
+  final String label;
+  final VoidCallback onTap;
+
+  const _RepairOptionTile({
+    required this.label,
+    required this.onTap,
+  });
+
+  @override
+  Widget build(BuildContext context) {
+    return Padding(
+      padding: const EdgeInsets.only(bottom: 12),
+      child: ListTile(
+        title: Text(
+          label,
+          style: const TextStyle(
+            fontSize: 16,
+            fontWeight: FontWeight.w500,
+          ),
+        ),
+        trailing: const Icon(Icons.arrow_forward_ios, size: 16),
+        onTap: onTap,
+        shape: RoundedRectangleBorder(
+          borderRadius: BorderRadius.circular(12),
+        ),
+        tileColor: Colors.grey[50],
+        contentPadding: const EdgeInsets.symmetric(horizontal: 16, vertical: 8),
       ),
     );
   }

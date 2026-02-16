@@ -1,6 +1,6 @@
 {
-    "name": "rescue_ride",
-    "short_name": "rescue_ride",
+    "name": "Rescue Ride",
+    "short_name": "Rescue Ride",
     "start_url": ".",
     "display": "standalone",
     "background_color": "#ffffff",
