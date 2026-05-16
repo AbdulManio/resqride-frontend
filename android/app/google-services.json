@@ -1,0 +1,29 @@
+{
+  "project_info": {
+    "project_number": "599605479497",
+    "project_id": "rescueride-42c2c",
+    "storage_bucket": "rescueride-42c2c.firebasestorage.app"
+  },
+  "client": [
+    {
+      "client_info": {
+        "mobilesdk_app_id": "1:599605479497:android:f7e00361e864f8df1c5798",
+        "android_client_info": {
+          "package_name": "com.rescueride.rescue_ride"
+        }
+      },
+      "oauth_client": [],
+      "api_key": [
+        {
+          "current_key": "AIzaSyC-56cIHy1PPC-iUD1jP6Kdp0B-GqpmWTY"
+        }
+      ],
+      "services": {
+        "appinvite_service": {
+          "other_platform_oauth_client": []
+        }
+      }
+    }
+  ],
+  "configuration_version": "1"
+}

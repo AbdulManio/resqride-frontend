@@ -1,7 +1,13 @@
+import 'dart:io';
 import 'package:flutter/material.dart';
 import 'package:go_router/go_router.dart';
 import 'package:image_picker/image_picker.dart';
+import 'package:http/http.dart' as http;
+import 'package:provider/provider.dart';
 import '../../core/theme/app_theme.dart';
+import '../../providers/auth_provider.dart';
+import '../../services/api_service.dart';
+import '../../services/request_service.dart';
 
 class ProfileSetupScreen extends StatefulWidget {
   const ProfileSetupScreen({super.key});
@@ -12,7 +18,11 @@ class ProfileSetupScreen extends StatefulWidget {
 
 class _ProfileSetupScreenState extends State<ProfileSetupScreen> {
   final _formKey = GlobalKey<FormState>();
+  final _vehicleController = TextEditingController();
+  final _vehicleModelController = TextEditingController();
+  final _numberPlateController = TextEditingController();
   bool _isShopOwner = false;
+  bool _isLoading = false;
   final Map<String, String> _uploadedFiles = {};
   final Set<String> _selectedServices = {};
   final ImagePicker _picker = ImagePicker();
@@ -25,10 +35,8 @@ class _ProfileSetupScreenState extends State<ProfileSetupScreen> {
         child: Column(
           mainAxisSize: MainAxisSize.min,
           children: [
-            const Text(
-              'Upload Document',
-              style: TextStyle(fontSize: 18, fontWeight: FontWeight.bold),
-            ),
+            const Text('Upload Document',
+                style: TextStyle(fontSize: 18, fontWeight: FontWeight.bold)),
             const SizedBox(height: 20),
             ListTile(
               leading: const Icon(Icons.camera_alt, color: AppColors.primary),
@@ -38,21 +46,7 @@ class _ProfileSetupScreenState extends State<ProfileSetupScreen> {
                 final XFile? photo =
                     await _picker.pickImage(source: ImageSource.camera);
                 if (photo != null) {
-                  setState(() {
-                    _uploadedFiles[key] = photo.path;
-                  });
-                  if (mounted) {
-                    // Use BuildContext from mounted state
-                    final contextRef = context;
-                    WidgetsBinding.instance.addPostFrameCallback((_) {
-                      if (mounted) {
-                        ScaffoldMessenger.of(contextRef).showSnackBar(
-                          SnackBar(
-                              content: Text('$docType uploaded successfully')),
-                        );
-                      }
-                    });
-                  }
+                  setState(() => _uploadedFiles[key] = photo.path);
                 }
               },
             ),
@@ -65,21 +59,7 @@ class _ProfileSetupScreenState extends State<ProfileSetupScreen> {
                 final XFile? image =
                     await _picker.pickImage(source: ImageSource.gallery);
                 if (image != null) {
-                  setState(() {
-                    _uploadedFiles[key] = image.path;
-                  });
-                  if (mounted) {
-                    // Use BuildContext from mounted state
-                    final contextRef = context;
-                    WidgetsBinding.instance.addPostFrameCallback((_) {
-                      if (mounted) {
-                        ScaffoldMessenger.of(contextRef).showSnackBar(
-                          SnackBar(
-                              content: Text('$docType uploaded successfully')),
-                        );
-                      }
-                    });
-                  }
+                  setState(() => _uploadedFiles[key] = image.path);
                 }
               },
             ),
@@ -87,6 +67,118 @@ class _ProfileSetupScreenState extends State<ProfileSetupScreen> {
         ),
       ),
     );
+  }
+
+  // ─── Upload documents to Cloudinary via backend ───────────────────────────
+  Future<bool> _uploadDocuments() async {
+    try {
+      final token = await ApiService.getToken();
+      if (token == null) return false;
+
+      final uri = Uri.parse('${ApiService.baseUrl}/users/upload-documents');
+
+      final request = http.MultipartRequest('POST', uri);
+      request.headers['Authorization'] = 'Bearer $token';
+
+      // Add CNIC photo (front)
+      if (_uploadedFiles.containsKey('cnic_front')) {
+        request.files.add(await http.MultipartFile.fromPath(
+          'cnicPhoto',
+          _uploadedFiles['cnic_front']!,
+        ));
+      }
+
+      // Add license/registration photo
+      if (_uploadedFiles.containsKey('registration')) {
+        request.files.add(await http.MultipartFile.fromPath(
+          'licensePhoto',
+          _uploadedFiles['registration']!,
+        ));
+      }
+
+      final response = await request.send();
+      final body = await response.stream.bytesToString();
+      print('📤 Upload response: $body');
+
+      return response.statusCode == 200;
+    } catch (e) {
+      print('❌ Upload error: $e');
+      return false;
+    }
+  }
+
+  // ─── Submit profile setup to backend ─────────────────────────────────────
+  Future<void> _submitProfile() async {
+    if (!_formKey.currentState!.validate()) return;
+
+    if (_selectedServices.isEmpty) {
+      ScaffoldMessenger.of(context).showSnackBar(
+        const SnackBar(content: Text('Please select at least one service')),
+      );
+      return;
+    }
+
+    if (!_uploadedFiles.containsKey('cnic_front') ||
+        !_uploadedFiles.containsKey('registration')) {
+      ScaffoldMessenger.of(context).showSnackBar(
+        const SnackBar(
+            content: Text('Please upload CNIC and Registration documents')),
+      );
+      return;
+    }
+
+    setState(() => _isLoading = true);
+
+    // Step 1: Upload documents to Cloudinary
+    ScaffoldMessenger.of(context).showSnackBar(
+      const SnackBar(content: Text('Uploading documents...')),
+    );
+
+    final uploadSuccess = await _uploadDocuments();
+
+    if (!uploadSuccess) {
+      setState(() => _isLoading = false);
+      if (mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          const SnackBar(
+            content: Text('Failed to upload documents. Please try again.'),
+            backgroundColor: Colors.red,
+          ),
+        );
+      }
+      return;
+    }
+
+    // Step 2: Save profile setup
+    final vehicleInfo =
+        '${_vehicleController.text} ${_vehicleModelController.text} - ${_numberPlateController.text}';
+
+    final response = await RescuerService.setupProfile(
+      services: _selectedServices.toList(),
+      isShopOwner: _isShopOwner,
+      vehicleInfo: _isShopOwner ? _vehicleController.text : vehicleInfo,
+    );
+
+    setState(() => _isLoading = false);
+
+    if (!mounted) return;
+
+    if (response['success'] == true) {
+      ScaffoldMessenger.of(context).showSnackBar(
+        const SnackBar(
+          content: Text('Profile submitted for approval!'),
+          backgroundColor: Colors.green,
+        ),
+      );
+      context.go('/account-status');
+    } else {
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(
+          content: Text(response['message'] ?? 'Submission failed'),
+          backgroundColor: Colors.red,
+        ),
+      );
+    }
   }
 
   @override
@@ -106,13 +198,13 @@ class _ProfileSetupScreenState extends State<ProfileSetupScreen> {
           child: Column(
             crossAxisAlignment: CrossAxisAlignment.start,
             children: [
+              // ─── Shop Owner Toggle ─────────────────────────────────────
               Row(
                 mainAxisAlignment: MainAxisAlignment.spaceBetween,
                 children: [
-                  const Text(
-                    'Do you own a shop?',
-                    style: TextStyle(fontSize: 16, fontWeight: FontWeight.bold),
-                  ),
+                  const Text('Do you own a shop?',
+                      style:
+                          TextStyle(fontSize: 16, fontWeight: FontWeight.bold)),
                   Switch(
                     value: _isShopOwner,
                     onChanged: (value) => setState(() => _isShopOwner = value),
@@ -123,13 +215,14 @@ class _ProfileSetupScreenState extends State<ProfileSetupScreen> {
               const SizedBox(height: 16),
               Text(
                 _isShopOwner ? 'Shop Details' : 'Vehicle Details',
-                style: const TextStyle(
-                  fontSize: 18,
-                  fontWeight: FontWeight.bold,
-                ),
+                style:
+                    const TextStyle(fontSize: 18, fontWeight: FontWeight.bold),
               ),
               const SizedBox(height: 16),
+
+              // ─── Vehicle / Shop Info ───────────────────────────────────
               TextFormField(
+                controller: _vehicleController,
                 decoration: InputDecoration(
                   labelText: _isShopOwner
                       ? 'Shop Name'
@@ -140,19 +233,20 @@ class _ProfileSetupScreenState extends State<ProfileSetupScreen> {
                     : null,
               ),
               const SizedBox(height: 16),
-              if (!_isShopOwner)
+              if (!_isShopOwner) ...[
                 TextFormField(
+                  controller: _vehicleModelController,
                   decoration: const InputDecoration(
-                    labelText:
-                        'Vehicle Make/Model (e.g., Honda City, Suzuki GSX)',
-                    hintText: 'Enter vehicle brand and model',
+                    labelText: 'Vehicle Make/Model (e.g., Honda City)',
                   ),
                   validator: (value) => value == null || value.isEmpty
                       ? 'Please enter vehicle make/model'
                       : null,
                 ),
-              if (!_isShopOwner) const SizedBox(height: 16),
+                const SizedBox(height: 16),
+              ],
               TextFormField(
+                controller: _numberPlateController,
                 decoration: InputDecoration(
                   labelText:
                       _isShopOwner ? 'Shop Address' : 'Vehicle Number Plate',
@@ -161,11 +255,11 @@ class _ProfileSetupScreenState extends State<ProfileSetupScreen> {
                     ? 'Please enter ${_isShopOwner ? "address" : "number plate"}'
                     : null,
               ),
+
+              // ─── Services ─────────────────────────────────────────────
               const SizedBox(height: 32),
-              const Text(
-                'Services You Provide',
-                style: TextStyle(fontSize: 18, fontWeight: FontWeight.bold),
-              ),
+              const Text('Services You Provide',
+                  style: TextStyle(fontSize: 18, fontWeight: FontWeight.bold)),
               const SizedBox(height: 16),
               Wrap(
                 spacing: 8,
@@ -175,92 +269,56 @@ class _ProfileSetupScreenState extends State<ProfileSetupScreen> {
                     label: 'Puncture Repair',
                     icon: Icons.tire_repair,
                     isSelected: _selectedServices.contains('Puncture Repair'),
-                    onSelected: (selected) {
-                      setState(() {
-                        if (selected) {
-                          _selectedServices.add('Puncture Repair');
-                        } else {
-                          _selectedServices.remove('Puncture Repair');
-                        }
-                      });
-                    },
+                    onSelected: (selected) => setState(() => selected
+                        ? _selectedServices.add('Puncture Repair')
+                        : _selectedServices.remove('Puncture Repair')),
                   ),
                   _ServiceChip(
                     label: 'Fuel Delivery',
                     icon: Icons.local_gas_station,
                     isSelected: _selectedServices.contains('Fuel Delivery'),
-                    onSelected: (selected) {
-                      setState(() {
-                        if (selected) {
-                          _selectedServices.add('Fuel Delivery');
-                        } else {
-                          _selectedServices.remove('Fuel Delivery');
-                        }
-                      });
-                    },
+                    onSelected: (selected) => setState(() => selected
+                        ? _selectedServices.add('Fuel Delivery')
+                        : _selectedServices.remove('Fuel Delivery')),
                   ),
                   _ServiceChip(
                     label: 'Battery Jump',
                     icon: Icons.battery_charging_full,
                     isSelected: _selectedServices.contains('Battery Jump'),
-                    onSelected: (selected) {
-                      setState(() {
-                        if (selected) {
-                          _selectedServices.add('Battery Jump');
-                        } else {
-                          _selectedServices.remove('Battery Jump');
-                        }
-                      });
-                    },
+                    onSelected: (selected) => setState(() => selected
+                        ? _selectedServices.add('Battery Jump')
+                        : _selectedServices.remove('Battery Jump')),
                   ),
                   _ServiceChip(
                     label: 'Minor Repair',
                     icon: Icons.build,
                     isSelected: _selectedServices.contains('Minor Repair'),
-                    onSelected: (selected) {
-                      setState(() {
-                        if (selected) {
-                          _selectedServices.add('Minor Repair');
-                        } else {
-                          _selectedServices.remove('Minor Repair');
-                        }
-                      });
-                    },
+                    onSelected: (selected) => setState(() => selected
+                        ? _selectedServices.add('Minor Repair')
+                        : _selectedServices.remove('Minor Repair')),
+                  ),
+                  _ServiceChip(
+                    label: 'Towing',
+                    icon: Icons.car_repair,
+                    isSelected: _selectedServices.contains('Towing'),
+                    onSelected: (selected) => setState(() => selected
+                        ? _selectedServices.add('Towing')
+                        : _selectedServices.remove('Towing')),
                   ),
                 ],
               ),
+
+              // ─── Documents ────────────────────────────────────────────
               const SizedBox(height: 32),
-              const Text(
-                'Identity Verification',
-                style: TextStyle(fontSize: 18, fontWeight: FontWeight.bold),
-              ),
+              const Text('Identity Verification',
+                  style: TextStyle(fontSize: 18, fontWeight: FontWeight.bold)),
               const SizedBox(height: 16),
-              TextFormField(
-                decoration: const InputDecoration(labelText: 'CNIC Number'),
-                keyboardType: TextInputType.number,
-                validator: (value) {
-                  if (value == null || value.isEmpty) {
-                    return 'Please enter CNIC';
-                  }
-                  if (value.length != 13) return 'CNIC must be 13 digits';
-                  return null;
-                },
-              ),
-              const SizedBox(height: 24),
               _DocumentUploadTile(
-                title: 'Upload CNIC Front',
+                title: 'Upload CNIC Photo',
                 icon: Icons.badge_outlined,
                 isUploaded: _uploadedFiles.containsKey('cnic_front'),
                 fileName: _uploadedFiles['cnic_front'],
-                onTap: () => _pickDocument('cnic_front', 'CNIC Front'),
-              ),
-              const SizedBox(height: 12),
-              _DocumentUploadTile(
-                title: 'Upload CNIC Back',
-                icon: Icons.badge_outlined,
-                isUploaded: _uploadedFiles.containsKey('cnic_back'),
-                fileName: _uploadedFiles['cnic_back'],
-                onTap: () => _pickDocument('cnic_back', 'CNIC Back'),
+                onTap: () => _pickDocument('cnic_front', 'CNIC'),
               ),
               const SizedBox(height: 12),
               _DocumentUploadTile(
@@ -275,24 +333,24 @@ class _ProfileSetupScreenState extends State<ProfileSetupScreen> {
                   _isShopOwner ? 'Shop License' : 'Vehicle Registration',
                 ),
               ),
+
+              // ─── Submit Button ────────────────────────────────────────
               const SizedBox(height: 48),
               ElevatedButton(
-                onPressed: () {
-                  if (_formKey.currentState!.validate()) {
-                    if (_uploadedFiles.length < 3) {
-                      ScaffoldMessenger.of(context).showSnackBar(
-                        const SnackBar(
-                          content: Text(
-                              'Please upload CNIC (front & back) and registration'),
-                        ),
-                      );
-                      return;
-                    }
-                    context.go('/account-status');
-                  }
-                },
-                child: const Text('Submit for Approval'),
+                onPressed: _isLoading ? null : _submitProfile,
+                style: ElevatedButton.styleFrom(
+                  minimumSize: const Size.fromHeight(56),
+                  backgroundColor: AppColors.primary,
+                ),
+                child: _isLoading
+                    ? const CircularProgressIndicator(color: Colors.white)
+                    : const Text(
+                        'Submit for Approval',
+                        style: TextStyle(
+                            fontSize: 18, fontWeight: FontWeight.bold),
+                      ),
               ),
+              const SizedBox(height: 24),
             ],
           ),
         ),
@@ -317,11 +375,8 @@ class _ServiceChip extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     return FilterChip(
-      avatar: Icon(
-        icon,
-        size: 18,
-        color: isSelected ? Colors.white : AppColors.primary,
-      ),
+      avatar: Icon(icon,
+          size: 18, color: isSelected ? Colors.white : AppColors.primary),
       label: Text(label),
       selected: isSelected,
       onSelected: onSelected,
@@ -380,10 +435,8 @@ class _DocumentUploadTile extends StatelessWidget {
         ),
         child: Row(
           children: [
-            Icon(
-              icon,
-              color: isUploaded ? AppColors.primary : AppColors.secondary,
-            ),
+            Icon(icon,
+                color: isUploaded ? AppColors.primary : AppColors.secondary),
             const SizedBox(width: 16),
             Expanded(
               child: Text(
@@ -398,7 +451,7 @@ class _DocumentUploadTile extends StatelessWidget {
             ),
             Icon(
               isUploaded ? Icons.check_circle : Icons.file_upload_outlined,
-              color: isUploaded ? AppColors.primary : AppColors.primary,
+              color: AppColors.primary,
             ),
           ],
         ),

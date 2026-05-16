@@ -3,6 +3,7 @@ import 'package:go_router/go_router.dart';
 import 'package:provider/provider.dart';
 import '../../providers/auth_provider.dart';
 import '../../core/theme/app_theme.dart';
+import '../../services/auth_service.dart';
 
 class RegistrationScreen extends StatefulWidget {
   const RegistrationScreen({super.key});
@@ -15,6 +16,48 @@ class _RegistrationScreenState extends State<RegistrationScreen> {
   final _formKey = GlobalKey<FormState>();
   final _nameController = TextEditingController();
   final _emailController = TextEditingController();
+  bool _isLoading = false;
+
+  Future<void> _completeRegistration() async {
+    if (!_formKey.currentState!.validate()) return;
+
+    final authProvider = context.read<AuthProvider>();
+
+    setState(() => _isLoading = true);
+
+    final response = await AuthService.register(
+      name: _nameController.text.trim(),
+      email: _emailController.text.trim(),
+    );
+
+    setState(() => _isLoading = false);
+
+    if (!mounted) return;
+
+    if (response['success'] == true) {
+      // Update local provider
+      authProvider.login(
+        name: _nameController.text.trim(),
+        email: _emailController.text.trim(),
+        phoneNumber: authProvider.phoneNumber ?? '',
+      );
+
+      final isRescuer = authProvider.role == UserRole.rescuer;
+
+      if (isRescuer) {
+        context.go('/profile-setup');
+      } else {
+        context.go('/customer-dashboard');
+      }
+    } else {
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(
+          content: Text(response['message'] ?? 'Registration failed'),
+          backgroundColor: AppColors.error,
+        ),
+      );
+    }
+  }
 
   @override
   Widget build(BuildContext context) {
@@ -57,6 +100,13 @@ class _RegistrationScreenState extends State<RegistrationScreen> {
                         fontWeight: FontWeight.bold,
                         color: Colors.white,
                       ),
+                    ),
+                    const SizedBox(height: 8),
+                    Text(
+                      isRescuer
+                          ? 'Setting up your rescuer account'
+                          : 'Setting up your customer account',
+                      style: const TextStyle(color: Colors.white70),
                     ),
                     const SizedBox(height: 40),
                     Center(
@@ -138,8 +188,8 @@ class _RegistrationScreenState extends State<RegistrationScreen> {
                           if (value == null || value.isEmpty) {
                             return 'Please enter your email';
                           }
-                          if (!value.endsWith('@gmail.com')) {
-                            return 'Only @gmail.com addresses are allowed';
+                          if (!value.contains('@')) {
+                            return 'Please enter a valid email';
                           }
                           return null;
                         },
@@ -147,29 +197,18 @@ class _RegistrationScreenState extends State<RegistrationScreen> {
                     ),
                     const SizedBox(height: 40),
                     ElevatedButton(
-                      onPressed: () {
-                        if (_formKey.currentState!.validate()) {
-                          authProvider.login(
-                            name: _nameController.text,
-                            email: _emailController.text,
-                            phoneNumber:
-                                authProvider.phoneNumber ?? '+92 300 1234567',
-                          );
-                          if (isRescuer) {
-                            context.go('/profile-setup');
-                          } else {
-                            context.go('/customer-dashboard');
-                          }
-                        }
-                      },
+                      onPressed: _isLoading ? null : _completeRegistration,
                       style: ElevatedButton.styleFrom(
                         backgroundColor: Colors.white,
                         foregroundColor: AppColors.primary,
                         minimumSize: const Size.fromHeight(56),
                       ),
-                      child: const Text('Complete Registration',
-                          style: TextStyle(
-                              fontSize: 18, fontWeight: FontWeight.bold)),
+                      child: _isLoading
+                          ? const CircularProgressIndicator(
+                              color: AppColors.primary)
+                          : const Text('Complete Registration',
+                              style: TextStyle(
+                                  fontSize: 18, fontWeight: FontWeight.bold)),
                     ),
                     const SizedBox(height: 24),
                   ],

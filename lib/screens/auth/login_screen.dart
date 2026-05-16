@@ -3,6 +3,7 @@ import 'package:go_router/go_router.dart';
 import 'package:provider/provider.dart';
 import '../../core/theme/app_theme.dart';
 import '../../providers/auth_provider.dart';
+import '../../services/auth_service.dart';
 
 class LoginScreen extends StatefulWidget {
   const LoginScreen({super.key});
@@ -13,10 +14,52 @@ class LoginScreen extends StatefulWidget {
 
 class _LoginScreenState extends State<LoginScreen> {
   final TextEditingController _phoneController = TextEditingController();
+  bool _isLoading = false;
+
+  Future<void> _sendOtp() async {
+    if (_phoneController.text.isEmpty) return;
+
+    final authProvider = context.read<AuthProvider>();
+    final phone = '+92${_phoneController.text.trim()}';
+
+    setState(() => _isLoading = true);
+
+    final response = await AuthService.sendOtp(
+      phone: phone,
+      role: authProvider.role == UserRole.rescuer ? 'rescuer' : 'customer',
+    );
+
+    setState(() => _isLoading = false);
+
+    if (!mounted) return;
+
+    if (response['success'] == true) {
+      authProvider.updateProfile(phoneNumber: phone);
+
+      // In dev mode, show OTP in a snackbar so you can test easily
+      if (response['otp'] != null) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(
+            content: Text('Dev OTP: ${response['otp']}'),
+            backgroundColor: Colors.green,
+            duration: const Duration(seconds: 5),
+          ),
+        );
+      }
+
+      context.push('/otp');
+    } else {
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(
+          content: Text(response['message'] ?? 'Failed to send OTP'),
+          backgroundColor: AppColors.error,
+        ),
+      );
+    }
+  }
 
   @override
   Widget build(BuildContext context) {
-    final authProvider = context.read<AuthProvider>();
     return Scaffold(
       body: Container(
         decoration: BoxDecoration(
@@ -79,21 +122,17 @@ class _LoginScreenState extends State<LoginScreen> {
                 ),
                 const Spacer(),
                 ElevatedButton(
-                  onPressed: () {
-                    if (_phoneController.text.isNotEmpty) {
-                      authProvider.updateProfile(
-                          phoneNumber: '+92 ${_phoneController.text}');
-                      context.push('/otp');
-                    }
-                  },
+                  onPressed: _isLoading ? null : _sendOtp,
                   style: ElevatedButton.styleFrom(
                     backgroundColor: Colors.white,
                     foregroundColor: AppColors.primary,
                     minimumSize: const Size.fromHeight(56),
                   ),
-                  child: const Text('Send Code',
-                      style:
-                          TextStyle(fontSize: 18, fontWeight: FontWeight.bold)),
+                  child: _isLoading
+                      ? const CircularProgressIndicator(color: AppColors.primary)
+                      : const Text('Send Code',
+                          style: TextStyle(
+                              fontSize: 18, fontWeight: FontWeight.bold)),
                 ),
                 const SizedBox(height: 24),
               ],

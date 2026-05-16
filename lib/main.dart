@@ -1,20 +1,21 @@
+import 'package:firebase_core/firebase_core.dart';
 import 'package:flutter/material.dart';
 import 'package:provider/provider.dart';
-import 'core/theme/app_theme.dart';
 import 'providers/auth_provider.dart';
 import 'providers/tracking_provider.dart';
 import 'router/app_router.dart';
+import 'services/notification_service.dart';
 
-void main() {
-  runApp(
-    MultiProvider(
-      providers: [
-        ChangeNotifierProvider(create: (_) => AuthProvider()),
-        ChangeNotifierProvider(create: (_) => TrackingProvider()),
-      ],
-      child: const RescueRideApp(),
-    ),
-  );
+void main() async {
+  WidgetsFlutterBinding.ensureInitialized();
+
+  // Initialize Firebase
+  await Firebase.initializeApp();
+
+  // Initialize push notifications
+  await NotificationService.initialize();
+
+  runApp(const RescueRideApp());
 }
 
 class RescueRideApp extends StatelessWidget {
@@ -22,12 +23,16 @@ class RescueRideApp extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    return MaterialApp.router(
-      title: 'Rescue Ride',
-      debugShowCheckedModeBanner: false,
-      theme: AppTheme.lightTheme,
-      darkTheme: AppTheme.darkTheme,
-      routerConfig: AppRouter.router,
+    return MultiProvider(
+      providers: [
+        ChangeNotifierProvider(create: (_) => AuthProvider()),
+        ChangeNotifierProvider(create: (_) => TrackingProvider()),
+      ],
+      child: MaterialApp.router(
+        title: 'RescueRide',
+        debugShowCheckedModeBanner: false,
+        routerConfig: AppRouter.router,
+      ),
     );
   }
 }
