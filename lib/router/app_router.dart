@@ -41,7 +41,8 @@ class AppRouter {
         path: '/registration',
         builder: (context, state) => const RegistrationScreen(),
       ),
-      // Customer Routes
+
+      // ─── Customer Routes ──────────────────────────────────────────────
       GoRoute(
         path: '/customer-dashboard',
         builder: (context, state) => const CustomerDashboardScreen(),
@@ -72,17 +73,37 @@ class AppRouter {
       ),
       GoRoute(
         path: '/offers',
-        builder: (context, state) => const OffersScreen(),
+        builder: (context, state) {
+          final extra = state.extra as Map<String, dynamic>? ?? {};
+          return OffersScreen(
+            requestId: extra['requestId'] ?? '',
+            offeredFare: extra['offeredFare'] ?? 500,
+            problemType: extra['problemType'] ?? '',
+          );
+        },
       ),
       GoRoute(
         path: '/tracking',
-        builder: (context, state) => const TrackingScreen(),
+        builder: (context, state) {
+          final extra = state.extra as Map<String, dynamic>? ?? {};
+          return TrackingScreen(
+            requestId: extra['requestId'] ?? '',
+            finalFare: extra['finalFare'] ?? 0,
+          );
+        },
       ),
       GoRoute(
         path: '/rating',
-        builder: (context, state) => const RatingScreen(),
+        builder: (context, state) {
+          final extra = state.extra as Map<String, dynamic>? ?? {};
+          return RatingScreen(
+            requestId: extra['requestId'] ?? '',
+            rescuerName: extra['rescuerName'] ?? 'Rescuer',
+          );
+        },
       ),
-      // Rescuer Routes
+
+      // ─── Rescuer Routes ──────────────────────────────────────────────
       GoRoute(
         path: '/rescuer-dashboard',
         builder: (context, state) => const RescuerDashboardScreen(),
@@ -105,7 +126,14 @@ class AppRouter {
       ),
       GoRoute(
         path: '/fare-offer',
-        builder: (context, state) => const FareOfferScreen(),
+        builder: (context, state) {
+          final extra = state.extra as Map<String, dynamic>? ?? {};
+          return FareOfferScreen(
+            requestId: extra['requestId'] ?? '',
+            offeredFare: extra['offeredFare'] ?? 500,
+            problemType: extra['problemType'] ?? '',
+          );
+        },
       ),
       GoRoute(
         path: '/navigation-map',

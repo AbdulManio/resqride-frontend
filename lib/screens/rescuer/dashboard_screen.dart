@@ -1,6 +1,10 @@
+import 'dart:async';
 import 'package:flutter/material.dart';
 import 'package:go_router/go_router.dart';
 import '../../core/theme/app_theme.dart';
+import '../../services/request_service.dart';
+import '../../services/socket_service.dart';
+import '../../services/api_service.dart';
 
 class RescuerDashboardScreen extends StatefulWidget {
   const RescuerDashboardScreen({super.key});
@@ -11,15 +15,87 @@ class RescuerDashboardScreen extends StatefulWidget {
 
 class _RescuerDashboardScreenState extends State<RescuerDashboardScreen> {
   bool _isOnline = false;
+  bool _isTogglingOnline = false;
+  List<Map<String, dynamic>> _requests = [];
+  Timer? _pollTimer;
+
+  @override
+  void initState() {
+    super.initState();
+    _listenForNewRequests();
+  }
+
+  @override
+  void dispose() {
+    _pollTimer?.cancel();
+    SocketService.off('new:request');
+    super.dispose();
+  }
+
+  // Listen for new requests via Socket.io
+  void _listenForNewRequests() {
+    SocketService.onNewRequest((data) {
+      if (mounted && _isOnline) {
+        setState(() {
+          final exists = _requests.any((r) => r['requestId'] == data['requestId']);
+          if (!exists) {
+            _requests.insert(0, data);
+          }
+        });
+
+        ScaffoldMessenger.of(context).showSnackBar(
+          SnackBar(
+            content: Text('New request: ${data['problemType']} — PKR ${data['offeredFare']}'),
+            backgroundColor: Colors.green,
+            duration: const Duration(seconds: 3),
+          ),
+        );
+      }
+    });
+  }
+
+  // Toggle online/offline
+  Future<void> _toggleOnline(bool value) async {
+    setState(() => _isTogglingOnline = true);
+
+    final response = await RescuerService.toggleOnline(value);
+
+    setState(() => _isTogglingOnline = false);
+
+    if (!mounted) return;
+
+    if (response['success'] == true) {
+      setState(() {
+        _isOnline = value;
+        if (!value) _requests.clear();
+      });
+
+      // Update socket
+      final user = await ApiService.getSavedUser();
+      if (user != null) {
+        SocketService.toggleOnline(user['_id'], value);
+      }
+
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(
+          content: Text(value ? '🟢 You are now Online!' : '🔴 You are now Offline'),
+          backgroundColor: value ? Colors.green : Colors.grey,
+        ),
+      );
+    } else {
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(
+          content: Text(response['message'] ?? 'Failed to update status'),
+          backgroundColor: Colors.red,
+        ),
+      );
+    }
+  }
 
   void _onBottomNavTap(int index) {
-    if (index == 0) return; // Already on Home
-
-    if (index == 1) {
-      context.push('/rescuer-earnings');
-    } else if (index == 2) {
-      context.push('/rescuer-profile');
-    }
+    if (index == 0) return;
+    if (index == 1) context.push('/rescuer-earnings');
+    if (index == 2) context.push('/rescuer-profile');
   }
 
   @override
@@ -34,30 +110,47 @@ class _RescuerDashboardScreenState extends State<RescuerDashboardScreen> {
                 _isOnline ? 'Online' : 'Offline',
                 style: const TextStyle(fontWeight: FontWeight.bold),
               ),
-              Switch(
-                value: _isOnline,
-                onChanged: (value) => setState(() => _isOnline = value),
-                activeThumbColor: AppColors.accent,
-              ),
+              _isTogglingOnline
+                  ? const Padding(
+                      padding: EdgeInsets.all(12),
+                      child: SizedBox(
+                        width: 20,
+                        height: 20,
+                        child: CircularProgressIndicator(
+                          strokeWidth: 2,
+                          color: Colors.white,
+                        ),
+                      ),
+                    )
+                  : Switch(
+                      value: _isOnline,
+                      onChanged: _toggleOnline,
+                      activeThumbColor: AppColors.accent,
+                    ),
             ],
           ),
         ],
       ),
-      body: _isOnline ? const _RequestsListView() : const _OfflineView(),
+      body: _isOnline
+          ? _RequestsListView(
+              requests: _requests,
+              onDecline: (requestId) {
+                setState(() =>
+                    _requests.removeWhere((r) => r['requestId'] == requestId));
+              },
+            )
+          : const _OfflineView(),
       bottomNavigationBar: BottomNavigationBar(
         currentIndex: 0,
         onTap: _onBottomNavTap,
         selectedItemColor: AppColors.secondary,
         items: const [
           BottomNavigationBarItem(
-            icon: Icon(Icons.dashboard),
-            label: 'Requests',
-          ),
+              icon: Icon(Icons.dashboard), label: 'Requests'),
           BottomNavigationBarItem(
-            icon: Icon(Icons.account_balance_wallet),
-            label: 'Earnings',
-          ),
-          BottomNavigationBarItem(icon: Icon(Icons.person), label: 'Profile'),
+              icon: Icon(Icons.account_balance_wallet), label: 'Earnings'),
+          BottomNavigationBarItem(
+              icon: Icon(Icons.person), label: 'Profile'),
         ],
       ),
     );
@@ -87,30 +180,44 @@ class _OfflineView extends StatelessWidget {
   }
 }
 
-class _RequestsListView extends StatefulWidget {
-  const _RequestsListView();
+class _RequestsListView extends StatelessWidget {
+  final List<Map<String, dynamic>> requests;
+  final Function(String) onDecline;
 
-  @override
-  State<_RequestsListView> createState() => _RequestsListViewState();
-}
-
-class _RequestsListViewState extends State<_RequestsListView> {
-  // Use local state to track removed items for UI-level behavior
-  final Set<int> _removedIndices = {};
+  const _RequestsListView({
+    required this.requests,
+    required this.onDecline,
+  });
 
   @override
   Widget build(BuildContext context) {
+    if (requests.isEmpty) {
+      return Center(
+        child: Column(
+          mainAxisAlignment: MainAxisAlignment.center,
+          children: [
+            Icon(Icons.search, size: 80, color: Colors.grey[400]),
+            const SizedBox(height: 16),
+            const Text(
+              'Waiting for requests...',
+              style: TextStyle(fontSize: 18, color: AppColors.textSecondary),
+            ),
+            const SizedBox(height: 8),
+            const Text('New requests will appear here automatically'),
+          ],
+        ),
+      );
+    }
+
     return ListView.builder(
       padding: const EdgeInsets.all(16),
-      itemCount: 3,
+      itemCount: requests.length,
       itemBuilder: (context, index) {
-        if (_removedIndices.contains(index)) return const SizedBox.shrink();
-
+        final request = requests[index];
         return Card(
           margin: const EdgeInsets.only(bottom: 16),
-          shape: RoundedRectangleBorder(
-            borderRadius: BorderRadius.circular(16),
-          ),
+          shape:
+              RoundedRectangleBorder(borderRadius: BorderRadius.circular(16)),
           child: Padding(
             padding: const EdgeInsets.all(16),
             child: Column(
@@ -119,12 +226,13 @@ class _RequestsListViewState extends State<_RequestsListView> {
                 Row(
                   mainAxisAlignment: MainAxisAlignment.spaceBetween,
                   children: [
-                    const Chip(
-                      label: Text('Puncture'),
+                    Chip(
+                      label: Text(request['problemType'] ?? 'Request'),
                       backgroundColor: AppColors.primary,
+                      labelStyle: const TextStyle(color: Colors.white),
                     ),
                     Text(
-                      'PKR ${500 + (index * 100)}',
+                      'PKR ${request['offeredFare'] ?? 0}',
                       style: const TextStyle(
                         fontWeight: FontWeight.bold,
                         fontSize: 18,
@@ -135,13 +243,10 @@ class _RequestsListViewState extends State<_RequestsListView> {
                 const SizedBox(height: 12),
                 Row(
                   children: [
-                    const Icon(
-                      Icons.location_on,
-                      size: 16,
-                      color: AppColors.secondary,
-                    ),
+                    const Icon(Icons.location_on,
+                        size: 16, color: AppColors.secondary),
                     const SizedBox(width: 8),
-                    Text('Location: ${(index + 1) * 1.2} km away'),
+                    Text(request['address'] ?? 'Customer location'),
                   ],
                 ),
                 const SizedBox(height: 16),
@@ -150,9 +255,7 @@ class _RequestsListViewState extends State<_RequestsListView> {
                     Expanded(
                       child: OutlinedButton(
                         onPressed: () {
-                          setState(() {
-                            _removedIndices.add(index);
-                          });
+                          onDecline(request['requestId'] ?? '');
                           ScaffoldMessenger.of(context).showSnackBar(
                             const SnackBar(
                               content: Text('Request declined'),
@@ -166,7 +269,11 @@ class _RequestsListViewState extends State<_RequestsListView> {
                     const SizedBox(width: 12),
                     Expanded(
                       child: ElevatedButton(
-                        onPressed: () => context.push('/fare-offer'),
+                        onPressed: () => context.push('/fare-offer', extra: {
+                          'requestId': request['requestId'] ?? '',
+                          'offeredFare': request['offeredFare'] ?? 0,
+                          'problemType': request['problemType'] ?? '',
+                        }),
                         child: const Text('Send Offer'),
                       ),
                     ),

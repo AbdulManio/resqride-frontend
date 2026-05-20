@@ -4,11 +4,19 @@ import 'package:google_maps_flutter/google_maps_flutter.dart';
 import 'package:provider/provider.dart';
 import '../../core/theme/app_theme.dart';
 import '../../providers/tracking_provider.dart';
+import '../../services/socket_service.dart';
+import '../../services/request_service.dart';
+import 'package:google_maps_flutter/google_maps_flutter.dart';
 
-/// Customer Tracking Screen - Shows live location of both User and Rescuer
-/// Uses TrackingProvider for real-time dual location tracking
 class TrackingScreen extends StatefulWidget {
-  const TrackingScreen({super.key});
+  final String requestId;
+  final int finalFare;
+
+  const TrackingScreen({
+    super.key,
+    required this.requestId,
+    required this.finalFare,
+  });
 
   @override
   State<TrackingScreen> createState() => _TrackingScreenState();
@@ -17,43 +25,79 @@ class TrackingScreen extends StatefulWidget {
 class _TrackingScreenState extends State<TrackingScreen> {
   GoogleMapController? _mapController;
   bool _isInitialized = false;
+  String _rescuerName = 'Rescuer';
+  String _rescuerVehicle = '';
 
   @override
   void initState() {
     super.initState();
     WidgetsBinding.instance.addPostFrameCallback((_) {
       _initializeTracking();
+      _listenToRescuerLocation();
+      _listenForCompletion();
     });
   }
 
-  /// Initialize tracking provider and start location services
   Future<void> _initializeTracking() async {
     final provider = Provider.of<TrackingProvider>(context, listen: false);
-
     bool success = await provider.initialize();
 
     if (success) {
-      // Start tracking both user and rescuer with background support
       provider.startUserTracking(enableBackground: true);
       provider.startRescuerTracking(enableBackground: true);
-
       setState(() => _isInitialized = true);
-
-      // Center camera to show both markers
       _centerCameraToBothLocations();
     } else {
-      // Show error if initialization failed
       if (mounted && provider.errorMessage != null) {
         _showErrorDialog('Initialization Error', provider.errorMessage!);
       }
     }
   }
 
-  /// Center camera to show both user and rescuer
+  // Listen for rescuer live location via Socket.io
+  void _listenToRescuerLocation() {
+    SocketService.onRescuerLocation((lat, lng) {
+      final provider = Provider.of<TrackingProvider>(context, listen: false);
+      provider.updateRescuerLocation(LatLng(lat, lng));
+
+      // Center camera
+      if (_mapController != null) {
+        _centerCameraToBothLocations();
+      }
+    });
+
+    // Listen for job completion
+    SocketService.onRequestCompleted((data) {
+      if (mounted) {
+        final provider = Provider.of<TrackingProvider>(context, listen: false);
+        provider.stopUserTracking();
+        provider.stopRescuerTracking();
+        context.push('/rating');
+      }
+    });
+  }
+
+  // Listen for job completion notification
+  void _listenForCompletion() {
+    SocketService.onRequestCompleted((data) {
+      if (mounted) {
+        ScaffoldMessenger.of(context).showSnackBar(
+          const SnackBar(
+            content: Text('Job completed! Please rate your rescuer.'),
+            backgroundColor: Colors.green,
+          ),
+        );
+        final provider = Provider.of<TrackingProvider>(context, listen: false);
+        provider.stopUserTracking();
+        provider.stopRescuerTracking();
+        context.push('/rating');
+      }
+    });
+  }
+
   void _centerCameraToBothLocations() {
     final provider = Provider.of<TrackingProvider>(context, listen: false);
     final cameraPosition = provider.getCameraPositionForBothLocations();
-
     if (cameraPosition != null && _mapController != null) {
       _mapController!.animateCamera(
         CameraUpdate.newCameraPosition(cameraPosition),
@@ -61,7 +105,6 @@ class _TrackingScreenState extends State<TrackingScreen> {
     }
   }
 
-  /// Show error dialog
   void _showErrorDialog(String title, String message) {
     showDialog(
       context: context,
@@ -78,10 +121,41 @@ class _TrackingScreenState extends State<TrackingScreen> {
     );
   }
 
+  Future<void> _cancelRequest() async {
+    final confirm = await showDialog<bool>(
+      context: context,
+      builder: (context) => AlertDialog(
+        title: const Text('Cancel Request?'),
+        content: const Text('Are you sure you want to cancel?'),
+        actions: [
+          TextButton(
+            onPressed: () => Navigator.pop(context, false),
+            child: const Text('No'),
+          ),
+          TextButton(
+            onPressed: () => Navigator.pop(context, true),
+            child: const Text('Yes', style: TextStyle(color: Colors.red)),
+          ),
+        ],
+      ),
+    );
+
+    if (confirm == true) {
+      await RequestService.cancelRequest(widget.requestId);
+      if (mounted) {
+        final provider = Provider.of<TrackingProvider>(context, listen: false);
+        provider.stopUserTracking();
+        provider.stopRescuerTracking();
+        context.go('/customer-dashboard');
+      }
+    }
+  }
+
   @override
   void dispose() {
     _mapController?.dispose();
-    // Provider is disposed automatically by MultiProvider in main.dart
+    SocketService.off('rescuer:location');
+    SocketService.off('request:completed');
     super.dispose();
   }
 
@@ -94,7 +168,6 @@ class _TrackingScreenState extends State<TrackingScreen> {
       ),
       body: Consumer<TrackingProvider>(
         builder: (context, trackingProvider, child) {
-          // Show loading state
           if (!_isInitialized || !trackingProvider.hasUserLocation) {
             return Center(
               child: Column(
@@ -109,7 +182,7 @@ class _TrackingScreenState extends State<TrackingScreen> {
                   if (trackingProvider.errorMessage != null) ...[
                     const SizedBox(height: 16),
                     ElevatedButton(
-                      onPressed: () => _initializeTracking(),
+                      onPressed: _initializeTracking,
                       child: const Text('Retry'),
                     ),
                   ],
@@ -118,10 +191,9 @@ class _TrackingScreenState extends State<TrackingScreen> {
             );
           }
 
-          // Show map with both locations
           return Stack(
             children: [
-              // Google Map with live markers and polylines
+              // ─── Google Map ───────────────────────────────────────────
               GoogleMap(
                 initialCameraPosition: CameraPosition(
                   target: trackingProvider.userLatLng!,
@@ -139,7 +211,7 @@ class _TrackingScreenState extends State<TrackingScreen> {
                 },
               ),
 
-              // Enhanced status bar with distance, ETA, and speed
+              // ─── Distance & ETA Info ──────────────────────────────────
               if (trackingProvider.hasRescuerLocation)
                 Positioned(
                   top: 16,
@@ -152,7 +224,7 @@ class _TrackingScreenState extends State<TrackingScreen> {
                       borderRadius: BorderRadius.circular(16),
                       boxShadow: [
                         BoxShadow(
-                          color: Colors.black.withValues(alpha: 0.1),
+                          color: Colors.black.withOpacity(0.1),
                           blurRadius: 12,
                           offset: const Offset(0, 4),
                         ),
@@ -161,15 +233,11 @@ class _TrackingScreenState extends State<TrackingScreen> {
                     child: Column(
                       mainAxisSize: MainAxisSize.min,
                       children: [
-                        // Primary status row
                         Row(
                           mainAxisAlignment: MainAxisAlignment.center,
                           children: [
-                            const Icon(
-                              Icons.directions_car,
-                              color: AppColors.primary,
-                              size: 24,
-                            ),
+                            const Icon(Icons.directions_car,
+                                color: AppColors.primary, size: 24),
                             const SizedBox(width: 12),
                             Text(
                               'Rescuer is ${trackingProvider.formattedDistance} away',
@@ -182,7 +250,6 @@ class _TrackingScreenState extends State<TrackingScreen> {
                           ],
                         ),
                         const SizedBox(height: 12),
-                        // Secondary info row
                         Row(
                           mainAxisAlignment: MainAxisAlignment.spaceEvenly,
                           children: [
@@ -197,9 +264,8 @@ class _TrackingScreenState extends State<TrackingScreen> {
                               color: Colors.green,
                             ),
                             _InfoChip(
-                              icon: Icons.location_on,
-                              label:
-                                  '${trackingProvider.distanceInKm.toStringAsFixed(2)} km',
+                              icon: Icons.payments,
+                              label: 'PKR ${widget.finalFare}',
                               color: Colors.blue,
                             ),
                           ],
@@ -209,7 +275,7 @@ class _TrackingScreenState extends State<TrackingScreen> {
                   ),
                 ),
 
-              // Center camera button
+              // ─── Center Camera Button ─────────────────────────────────
               Positioned(
                 right: 16,
                 top: 90,
@@ -217,14 +283,12 @@ class _TrackingScreenState extends State<TrackingScreen> {
                   heroTag: 'center_camera',
                   backgroundColor: Colors.white,
                   onPressed: _centerCameraToBothLocations,
-                  child: const Icon(
-                    Icons.center_focus_strong,
-                    color: AppColors.primary,
-                  ),
+                  child: const Icon(Icons.center_focus_strong,
+                      color: AppColors.primary),
                 ),
               ),
 
-              // Rescuer info bottom sheet
+              // ─── Bottom Sheet ─────────────────────────────────────────
               Positioned(
                 bottom: 0,
                 left: 0,
@@ -233,9 +297,8 @@ class _TrackingScreenState extends State<TrackingScreen> {
                   padding: const EdgeInsets.all(24),
                   decoration: const BoxDecoration(
                     color: Colors.white,
-                    borderRadius: BorderRadius.vertical(
-                      top: Radius.circular(24),
-                    ),
+                    borderRadius:
+                        BorderRadius.vertical(top: Radius.circular(24)),
                     boxShadow: [
                       BoxShadow(
                         color: Colors.black12,
@@ -252,42 +315,33 @@ class _TrackingScreenState extends State<TrackingScreen> {
                           const CircleAvatar(
                             radius: 30,
                             backgroundColor: AppColors.primary,
-                            child: Icon(
-                              Icons.person,
-                              size: 30,
-                              color: AppColors.secondary,
-                            ),
+                            child: Icon(Icons.person,
+                                size: 30, color: Colors.white),
                           ),
                           const SizedBox(width: 16),
                           Expanded(
                             child: Column(
                               crossAxisAlignment: CrossAxisAlignment.start,
                               children: [
-                                const Text(
-                                  'Ali Khan',
-                                  style: TextStyle(
+                                Text(
+                                  _rescuerName,
+                                  style: const TextStyle(
                                     fontSize: 18,
                                     fontWeight: FontWeight.bold,
                                   ),
                                 ),
                                 Text(
-                                  'Arriving soon (Toyota Corolla)',
+                                  'Final fare: PKR ${widget.finalFare}',
                                   style: const TextStyle(
-                                    color: AppColors.textSecondary,
-                                  ),
+                                      color: AppColors.textSecondary),
                                 ),
                               ],
                             ),
                           ),
                           IconButton(
-                            onPressed: () {
-                              // Call rescuer functionality
-                            },
-                            icon: const Icon(
-                              Icons.call,
-                              color: AppColors.accent,
-                              size: 30,
-                            ),
+                            onPressed: () {},
+                            icon: const Icon(Icons.call,
+                                color: AppColors.primary, size: 30),
                           ),
                         ],
                       ),
@@ -295,41 +349,23 @@ class _TrackingScreenState extends State<TrackingScreen> {
                       Row(
                         mainAxisAlignment: MainAxisAlignment.spaceBetween,
                         children: [
-                          const Text(
-                            'OTP: 1234',
-                            style: TextStyle(
-                              fontSize: 16,
-                              fontWeight: FontWeight.bold,
-                            ),
+                          Text(
+                            'Request ID: ${widget.requestId.substring(0, 8)}...',
+                            style: const TextStyle(
+                                fontSize: 13, color: Colors.grey),
                           ),
                           TextButton(
-                            onPressed: () {
-                              // Stop tracking
-                              trackingProvider.stopUserTracking();
-                              trackingProvider.stopRescuerTracking();
-
-                              context.go('/customer-dashboard');
-                              ScaffoldMessenger.of(context).showSnackBar(
-                                const SnackBar(
-                                  content: Text('Request cancelled'),
-                                  backgroundColor: AppColors.error,
-                                ),
-                              );
-                            },
-                            child: const Text(
-                              'Cancel Request',
-                              style: TextStyle(color: AppColors.error),
-                            ),
+                            onPressed: _cancelRequest,
+                            child: const Text('Cancel Request',
+                                style: TextStyle(color: AppColors.error)),
                           ),
                         ],
                       ),
                       const SizedBox(height: 16),
                       ElevatedButton(
                         onPressed: () {
-                          // Stop tracking before navigating
                           trackingProvider.stopUserTracking();
                           trackingProvider.stopRescuerTracking();
-
                           context.push('/rating');
                         },
                         style: ElevatedButton.styleFrom(
@@ -350,7 +386,6 @@ class _TrackingScreenState extends State<TrackingScreen> {
   }
 }
 
-/// Custom info chip widget for displaying tracking metrics
 class _InfoChip extends StatelessWidget {
   final IconData icon;
   final String label;
@@ -367,9 +402,9 @@ class _InfoChip extends StatelessWidget {
     return Container(
       padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 8),
       decoration: BoxDecoration(
-        color: color.withValues(alpha: 0.1),
+        color: color.withOpacity(0.1),
         borderRadius: BorderRadius.circular(20),
-        border: Border.all(color: color.withValues(alpha: 0.3)),
+        border: Border.all(color: color.withOpacity(0.3)),
       ),
       child: Row(
         mainAxisSize: MainAxisSize.min,

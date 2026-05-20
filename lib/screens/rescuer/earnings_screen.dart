@@ -1,33 +1,98 @@
 import 'package:flutter/material.dart';
 import '../../core/theme/app_theme.dart';
+import '../../services/request_service.dart';
 
-class RescuerEarningsScreen extends StatelessWidget {
+class RescuerEarningsScreen extends StatefulWidget {
   const RescuerEarningsScreen({super.key});
+
+  @override
+  State<RescuerEarningsScreen> createState() => _RescuerEarningsScreenState();
+}
+
+class _RescuerEarningsScreenState extends State<RescuerEarningsScreen> {
+  bool _isLoading = true;
+  Map<String, dynamic> _earningsData = {};
+  List<dynamic> _jobs = [];
+
+  @override
+  void initState() {
+    super.initState();
+    _loadEarnings();
+  }
+
+  Future<void> _loadEarnings() async {
+    setState(() => _isLoading = true);
+
+    final response = await RescuerService.getEarnings();
+
+    setState(() => _isLoading = false);
+
+    if (response['success'] == true) {
+      setState(() {
+        _earningsData = response;
+        _jobs = response['jobs'] ?? [];
+      });
+    }
+  }
 
   @override
   Widget build(BuildContext context) {
     return Scaffold(
-      appBar: AppBar(title: const Text('My Earnings')),
-      body: SingleChildScrollView(
-        padding: const EdgeInsets.all(16),
-        child: Column(
-          crossAxisAlignment: CrossAxisAlignment.start,
-          children: [
-            _buildSummaryCard(),
-            const SizedBox(height: 24),
-            const Text(
-              'Recent Transactions',
-              style: TextStyle(fontSize: 20, fontWeight: FontWeight.bold),
-            ),
-            const SizedBox(height: 16),
-            _buildTransactionsList(),
-          ],
-        ),
+      appBar: AppBar(
+        title: const Text('My Earnings'),
+        actions: [
+          IconButton(
+            icon: const Icon(Icons.refresh),
+            onPressed: _loadEarnings,
+          ),
+        ],
       ),
+      body: _isLoading
+          ? const Center(child: CircularProgressIndicator())
+          : SingleChildScrollView(
+              padding: const EdgeInsets.all(16),
+              child: Column(
+                crossAxisAlignment: CrossAxisAlignment.start,
+                children: [
+                  _buildSummaryCard(),
+                  const SizedBox(height: 24),
+                  const Text(
+                    'Recent Jobs',
+                    style:
+                        TextStyle(fontSize: 20, fontWeight: FontWeight.bold),
+                  ),
+                  const SizedBox(height: 16),
+                  _jobs.isEmpty
+                      ? const Center(
+                          child: Padding(
+                            padding: EdgeInsets.all(32),
+                            child: Column(
+                              children: [
+                                Icon(Icons.work_off,
+                                    size: 64, color: Colors.grey),
+                                SizedBox(height: 16),
+                                Text(
+                                  'No completed jobs yet',
+                                  style: TextStyle(
+                                      color: Colors.grey, fontSize: 16),
+                                ),
+                              ],
+                            ),
+                          ),
+                        )
+                      : _buildJobsList(),
+                ],
+              ),
+            ),
     );
   }
 
   Widget _buildSummaryCard() {
+    final totalEarnings = _earningsData['totalEarnings'] ?? 0;
+    final todayEarnings = _earningsData['todayEarnings'] ?? 0;
+    final totalJobs = _earningsData['totalJobs'] ?? 0;
+    final todayJobs = _earningsData['todayJobs'] ?? 0;
+
     return Container(
       width: double.infinity,
       padding: const EdgeInsets.all(24),
@@ -36,7 +101,7 @@ class RescuerEarningsScreen extends StatelessWidget {
         borderRadius: BorderRadius.circular(24),
         boxShadow: [
           BoxShadow(
-            color: AppColors.secondary.withValues(alpha: 0.3),
+            color: AppColors.secondary.withOpacity(0.3),
             blurRadius: 10,
             offset: const Offset(0, 5),
           ),
@@ -45,25 +110,30 @@ class RescuerEarningsScreen extends StatelessWidget {
       child: Column(
         children: [
           const Text(
-            'Total Balance',
+            'Total Earnings',
             style: TextStyle(color: Colors.white70, fontSize: 16),
           ),
           const SizedBox(height: 8),
-          const Text(
-            'PKR 12,500',
-            style: TextStyle(
+          Text(
+            'PKR ${totalEarnings.toString()}',
+            style: const TextStyle(
               color: Colors.white,
               fontSize: 32,
               fontWeight: FontWeight.bold,
             ),
           ),
+          const SizedBox(height: 8),
+          Text(
+            'Today: PKR $todayEarnings',
+            style: const TextStyle(color: Colors.white70, fontSize: 14),
+          ),
           const SizedBox(height: 24),
           Row(
             mainAxisAlignment: MainAxisAlignment.spaceAround,
             children: [
-              _buildStatItem('Requests', '24'),
+              _buildStatItem('Total Jobs', totalJobs.toString()),
               Container(width: 1, height: 40, color: Colors.white24),
-              _buildStatItem('Rating', '4.8'),
+              _buildStatItem('Today', todayJobs.toString()),
             ],
           ),
         ],
@@ -85,28 +155,21 @@ class RescuerEarningsScreen extends StatelessWidget {
     );
   }
 
-  Widget _buildTransactionsList() {
-    final transactions = [
-      {
-        'title': 'Battery Jump-start',
-        'date': '24 Jan 2026',
-        'amount': '+ PKR 800'
-      },
-      {'title': 'Tire Repair', 'date': '23 Jan 2026', 'amount': '+ PKR 600'},
-      {
-        'title': 'Fuel Delivery',
-        'date': '22 Jan 2026',
-        'amount': '+ PKR 1,200'
-      },
-      {'title': 'Engine Check', 'date': '21 Jan 2026', 'amount': '+ PKR 2,500'},
-    ];
-
+  Widget _buildJobsList() {
     return ListView.builder(
       shrinkWrap: true,
       physics: const NeverScrollableScrollPhysics(),
-      itemCount: transactions.length,
+      itemCount: _jobs.length,
       itemBuilder: (context, index) {
-        final tx = transactions[index];
+        final job = _jobs[index];
+        final fare = job['finalFare'] ?? job['offeredFare'] ?? 0;
+        final date = job['completedAt'] != null
+            ? DateTime.parse(job['completedAt']).toLocal()
+            : null;
+        final dateStr = date != null
+            ? '${date.day}/${date.month}/${date.year}'
+            : 'N/A';
+
         return Card(
           margin: const EdgeInsets.only(bottom: 12),
           child: ListTile(
@@ -114,10 +177,10 @@ class RescuerEarningsScreen extends StatelessWidget {
               backgroundColor: AppColors.primary,
               child: Icon(Icons.account_balance_wallet, color: Colors.white),
             ),
-            title: Text(tx['title']!),
-            subtitle: Text(tx['date']!),
+            title: Text(job['problemType'] ?? 'Service'),
+            subtitle: Text(dateStr),
             trailing: Text(
-              tx['amount']!,
+              '+ PKR $fare',
               style: const TextStyle(
                   color: Colors.green, fontWeight: FontWeight.bold),
             ),

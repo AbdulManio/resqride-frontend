@@ -1,31 +1,173 @@
+import 'dart:async';
 import 'package:flutter/material.dart';
 import 'package:go_router/go_router.dart';
 import '../../core/theme/app_theme.dart';
+import '../../services/request_service.dart';
+import '../../services/socket_service.dart';
+import '../../services/api_service.dart';
 
-class OffersScreen extends StatelessWidget {
-  const OffersScreen({super.key});
+class OffersScreen extends StatefulWidget {
+  final String requestId;
+  final int offeredFare;
+  final String problemType;
+
+  const OffersScreen({
+    super.key,
+    required this.requestId,
+    required this.offeredFare,
+    required this.problemType,
+  });
+
+  @override
+  State<OffersScreen> createState() => _OffersScreenState();
+}
+
+class _OffersScreenState extends State<OffersScreen> {
+  List<Map<String, dynamic>> _offers = [];
+  bool _isLoading = false;
+  Timer? _pollTimer;
+
+  @override
+  void initState() {
+    super.initState();
+    _listenForOffers();
+    _pollOffers(); // Poll every 5 seconds
+  }
+
+  @override
+  void dispose() {
+    _pollTimer?.cancel();
+    SocketService.off('new:offer');
+    super.dispose();
+  }
+
+  // Listen for real-time offers via socket
+  void _listenForOffers() {
+    SocketService.onNewOffer((data) {
+      if (mounted) {
+        setState(() {
+          // Add new offer if not already in list
+          final exists = _offers.any((o) => o['_id'] == data['offerId']);
+          if (!exists) {
+            _offers.add({
+              '_id': data['offerId'],
+              'rescuer': data['rescuer'],
+              'counterFare': data['counterFare'],
+              'distanceKm': data['distanceKm'],
+              'etaMinutes': data['etaMinutes'],
+            });
+          }
+        });
+      }
+    });
+  }
+
+  // Poll offers from backend every 5 seconds
+  void _pollOffers() {
+    _pollTimer = Timer.periodic(const Duration(seconds: 5), (_) async {
+      final response = await RequestService.getOffers(widget.requestId);
+      if (response['success'] == true && mounted) {
+        setState(() {
+          _offers = List<Map<String, dynamic>>.from(response['offers'] ?? []);
+        });
+      }
+    });
+  }
+
+  Future<void> _acceptOffer(String offerId, int finalFare) async {
+    setState(() => _isLoading = true);
+
+    final response = await RequestService.acceptOffer(offerId);
+
+    setState(() => _isLoading = false);
+
+    if (!mounted) return;
+
+    if (response['success'] == true) {
+      _pollTimer?.cancel();
+
+      ScaffoldMessenger.of(context).showSnackBar(
+        const SnackBar(
+          content: Text('Offer accepted! Rescuer is on the way 🚗'),
+          backgroundColor: Colors.green,
+        ),
+      );
+
+      // Join request room for real-time tracking
+      SocketService.joinRequest(widget.requestId);
+
+      // Go to tracking screen
+      context.push('/tracking', extra: {
+        'requestId': widget.requestId,
+        'finalFare': finalFare,
+      });
+    } else {
+      ScaffoldMessenger.of(context).showSnackBar(
+        SnackBar(
+          content: Text(response['message'] ?? 'Failed to accept offer'),
+          backgroundColor: Colors.red,
+        ),
+      );
+    }
+  }
+
+  Future<void> _cancelRequest() async {
+    final confirm = await showDialog<bool>(
+      context: context,
+      builder: (context) => AlertDialog(
+        title: const Text('Cancel Request?'),
+        content: const Text('Are you sure you want to cancel this request?'),
+        actions: [
+          TextButton(
+            onPressed: () => Navigator.pop(context, false),
+            child: const Text('No'),
+          ),
+          TextButton(
+            onPressed: () => Navigator.pop(context, true),
+            child: const Text('Yes', style: TextStyle(color: Colors.red)),
+          ),
+        ],
+      ),
+    );
+
+    if (confirm == true) {
+      await RequestService.cancelRequest(widget.requestId);
+      if (mounted) context.pop();
+    }
+  }
 
   @override
   Widget build(BuildContext context) {
     return Scaffold(
-      appBar: AppBar(title: const Text('Rescuer Offers')),
+      appBar: AppBar(
+        title: const Text('Rescuer Offers'),
+        actions: [
+          TextButton(
+            onPressed: _cancelRequest,
+            child: const Text('Cancel', style: TextStyle(color: Colors.red)),
+          ),
+        ],
+      ),
       body: Column(
         children: [
+          // ─── Header ──────────────────────────────────────────────────
           Padding(
             padding: const EdgeInsets.all(16.0),
             child: Row(
               children: [
-                const Expanded(
+                Expanded(
                   child: Column(
                     crossAxisAlignment: CrossAxisAlignment.start,
                     children: [
                       Text(
-                        'Your Offer: 600 PKR',
-                        style: TextStyle(fontWeight: FontWeight.bold),
+                        'Your Offer: ${widget.offeredFare} PKR',
+                        style: const TextStyle(fontWeight: FontWeight.bold),
                       ),
                       Text(
-                        'Searching for nearby rescuers...',
-                        style: TextStyle(
+                        _offers.isEmpty
+                            ? 'Searching for nearby rescuers...'
+                            : '${_offers.length} offer(s) received',
+                        style: const TextStyle(
                           color: AppColors.textSecondary,
                           fontSize: 12,
                         ),
@@ -33,38 +175,61 @@ class OffersScreen extends StatelessWidget {
                     ],
                   ),
                 ),
-                const SizedBox(width: 8),
-                const SizedBox(
-                  width: 20,
-                  height: 20,
-                  child: CircularProgressIndicator(strokeWidth: 2),
-                ),
+                if (_offers.isEmpty)
+                  const SizedBox(
+                    width: 20,
+                    height: 20,
+                    child: CircularProgressIndicator(strokeWidth: 2),
+                  ),
               ],
             ),
           ),
+
+          // ─── Offers List ─────────────────────────────────────────────
           Expanded(
-            child: ListView.builder(
-              padding: const EdgeInsets.all(16),
-              itemCount: 3,
-              itemBuilder: (context, index) {
-                return _OfferCard(
-                  name: index == 0
-                      ? 'Ali Khan'
-                      : index == 1
-                      ? 'Ahmed Raza'
-                      : 'Zubair Shah',
-                  distance: '${(index + 1) * 0.8} km',
-                  rating: 4.5 + (index * 0.1),
-                  fare: index == 0
-                      ? 600
-                      : index == 1
-                      ? 700
-                      : 800,
-                  onAccept: () => context.push('/tracking'),
-                  onReject: () {},
-                );
-              },
-            ),
+            child: _offers.isEmpty
+                ? const Center(
+                    child: Column(
+                      mainAxisAlignment: MainAxisAlignment.center,
+                      children: [
+                        Icon(Icons.search, size: 64, color: Colors.grey),
+                        SizedBox(height: 16),
+                        Text(
+                          'Waiting for rescuers to respond...',
+                          style: TextStyle(color: Colors.grey, fontSize: 16),
+                        ),
+                        SizedBox(height: 8),
+                        Text(
+                          'This usually takes 1-2 minutes',
+                          style: TextStyle(color: Colors.grey, fontSize: 12),
+                        ),
+                      ],
+                    ),
+                  )
+                : ListView.builder(
+                    padding: const EdgeInsets.all(16),
+                    itemCount: _offers.length,
+                    itemBuilder: (context, index) {
+                      final offer = _offers[index];
+                      final rescuer = offer['rescuer'] ?? {};
+                      return _OfferCard(
+                        name: rescuer['name'] ?? 'Rescuer',
+                        distance: offer['distanceKm'] != null
+                            ? '${offer['distanceKm']} km'
+                            : 'N/A',
+                        rating: (rescuer['rating'] ?? 0).toDouble(),
+                        fare: offer['counterFare'] ?? 0,
+                        isLoading: _isLoading,
+                        onAccept: () => _acceptOffer(
+                          offer['_id'],
+                          offer['counterFare'] ?? 0,
+                        ),
+                        onReject: () {
+                          setState(() => _offers.removeAt(index));
+                        },
+                      );
+                    },
+                  ),
           ),
         ],
       ),
@@ -77,6 +242,7 @@ class _OfferCard extends StatelessWidget {
   final String distance;
   final double rating;
   final int fare;
+  final bool isLoading;
   final VoidCallback onAccept;
   final VoidCallback onReject;
 
@@ -85,6 +251,7 @@ class _OfferCard extends StatelessWidget {
     required this.distance,
     required this.rating,
     required this.fare,
+    required this.isLoading,
     required this.onAccept,
     required this.onReject,
   });
@@ -103,7 +270,7 @@ class _OfferCard extends StatelessWidget {
                 const CircleAvatar(
                   radius: 25,
                   backgroundColor: AppColors.primary,
-                  child: Icon(Icons.person, color: AppColors.secondary),
+                  child: Icon(Icons.person, color: Colors.white),
                 ),
                 const SizedBox(width: 12),
                 Expanded(
@@ -131,7 +298,7 @@ class _OfferCard extends StatelessWidget {
                   style: const TextStyle(
                     fontWeight: FontWeight.bold,
                     fontSize: 20,
-                    color: AppColors.secondary,
+                    color: AppColors.primary,
                   ),
                 ),
               ],
@@ -141,11 +308,7 @@ class _OfferCard extends StatelessWidget {
               children: [
                 Expanded(
                   child: OutlinedButton(
-                    onPressed: () {
-                      ScaffoldMessenger.of(context).showSnackBar(
-                        const SnackBar(content: Text('Offer declined')),
-                      );
-                    },
+                    onPressed: onReject,
                     style: OutlinedButton.styleFrom(
                       foregroundColor: AppColors.error,
                       side: const BorderSide(color: AppColors.error),
@@ -156,8 +319,17 @@ class _OfferCard extends StatelessWidget {
                 const SizedBox(width: 12),
                 Expanded(
                   child: ElevatedButton(
-                    onPressed: onAccept,
-                    child: const Text('Accept'),
+                    onPressed: isLoading ? null : onAccept,
+                    child: isLoading
+                        ? const SizedBox(
+                            width: 20,
+                            height: 20,
+                            child: CircularProgressIndicator(
+                              color: Colors.white,
+                              strokeWidth: 2,
+                            ),
+                          )
+                        : const Text('Accept'),
                   ),
                 ),
               ],
