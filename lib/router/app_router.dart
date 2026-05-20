@@ -137,7 +137,17 @@ class AppRouter {
       ),
       GoRoute(
         path: '/navigation-map',
-        builder: (context, state) => const NavigationMapScreen(),
+        builder: (context, state) {
+          final extra = state.extra as Map<String, dynamic>? ?? {};
+          return NavigationMapScreen(
+            requestId: extra['requestId'] ?? '',
+            customerLat: (extra['customerLat'] ?? 0.0).toDouble(),
+            customerLng: (extra['customerLng'] ?? 0.0).toDouble(),
+            customerName: extra['customerName'] ?? 'Customer',
+            problemType: extra['problemType'] ?? '',
+            finalFare: extra['finalFare'] ?? 0,
+          );
+        },
       ),
       GoRoute(
         path: '/account-status',

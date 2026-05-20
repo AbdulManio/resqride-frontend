@@ -4,11 +4,27 @@ import 'package:google_maps_flutter/google_maps_flutter.dart';
 import 'package:provider/provider.dart';
 import '../../core/theme/app_theme.dart';
 import '../../providers/tracking_provider.dart';
+import '../../services/request_service.dart';
+import '../../services/socket_service.dart';
+import '../../services/api_service.dart';
 
-/// Rescuer Navigation Screen - Shows live location of both Rescuer and Customer
-/// Uses TrackingProvider for real-time dual location tracking
 class NavigationMapScreen extends StatefulWidget {
-  const NavigationMapScreen({super.key});
+  final String requestId;
+  final double customerLat;
+  final double customerLng;
+  final String customerName;
+  final String problemType;
+  final int finalFare;
+
+  const NavigationMapScreen({
+    super.key,
+    required this.requestId,
+    required this.customerLat,
+    required this.customerLng,
+    required this.customerName,
+    required this.problemType,
+    required this.finalFare,
+  });
 
   @override
   State<NavigationMapScreen> createState() => _NavigationMapScreenState();
@@ -23,42 +39,57 @@ class _NavigationMapScreenState extends State<NavigationMapScreen> {
     super.initState();
     WidgetsBinding.instance.addPostFrameCallback((_) {
       _initializeTracking();
+      _startSendingLocation();
     });
   }
 
-  /// Initialize tracking provider and start location services
   Future<void> _initializeTracking() async {
     final provider = Provider.of<TrackingProvider>(context, listen: false);
-
     bool success = await provider.initialize();
 
     if (success) {
-      // For rescuer, user tracking represents rescuer's location
-      // and rescuer tracking represents customer's location
-      provider.startUserTracking(
-          enableBackground:
-              true); // Track rescuer (self) with background support
-      provider.startRescuerTracking(
-          enableBackground:
-              true); // Track customer location with background support
+      provider.startUserTracking(enableBackground: true);
+
+      // Set customer location as rescuer target
+      provider.updateRescuerLocation(
+          LatLng(widget.customerLat, widget.customerLng));
 
       setState(() => _isInitialized = true);
-
-      // Center camera to show both markers
       _centerCameraToBothLocations();
     } else {
-      // Show error if initialization failed
       if (mounted && provider.errorMessage != null) {
-        _showErrorDialog('Initialization Error', provider.errorMessage!);
+        _showErrorDialog('Error', provider.errorMessage!);
       }
     }
   }
 
-  /// Center camera to show both rescuer and customer
+  // Send rescuer location to customer via socket every 5 seconds
+  void _startSendingLocation() async {
+    final user = await ApiService.getSavedUser();
+    if (user == null) return;
+
+    final provider = Provider.of<TrackingProvider>(context, listen: false);
+
+    Future.doWhile(() async {
+      await Future.delayed(const Duration(seconds: 5));
+      if (!mounted) return false;
+
+      final location = provider.userLatLng;
+      if (location != null) {
+        SocketService.updateRescuerLocation(
+          rescuerId: user['_id'],
+          requestId: widget.requestId,
+          lat: location.latitude,
+          lng: location.longitude,
+        );
+      }
+      return mounted;
+    });
+  }
+
   void _centerCameraToBothLocations() {
     final provider = Provider.of<TrackingProvider>(context, listen: false);
     final cameraPosition = provider.getCameraPositionForBothLocations();
-
     if (cameraPosition != null && _mapController != null) {
       _mapController!.animateCamera(
         CameraUpdate.newCameraPosition(cameraPosition),
@@ -66,7 +97,6 @@ class _NavigationMapScreenState extends State<NavigationMapScreen> {
     }
   }
 
-  /// Show error dialog
   void _showErrorDialog(String title, String message) {
     showDialog(
       context: context,
@@ -83,41 +113,38 @@ class _NavigationMapScreenState extends State<NavigationMapScreen> {
     );
   }
 
-  /// Show OTP prompt dialog
-  void _showOTPPrompt(BuildContext context) {
+  void _showCompleteDialog() {
     showDialog(
       context: context,
       builder: (ctx) => AlertDialog(
-        title: const Text('Enter Service OTP'),
-        content: const TextField(
-          keyboardType: TextInputType.number,
-          decoration: InputDecoration(
-            hintText: 'Ask customer for 4-digit OTP',
-          ),
-        ),
+        title: const Text('Complete Service'),
+        content: const Text('Mark this job as completed?'),
         actions: [
           TextButton(
             onPressed: () => Navigator.pop(ctx),
             child: const Text('Cancel'),
           ),
           ElevatedButton(
-            onPressed: () {
-              final provider =
-                  Provider.of<TrackingProvider>(context, listen: false);
-              provider.stopUserTracking();
-              provider.stopRescuerTracking();
-
+            onPressed: () async {
               Navigator.pop(ctx);
-              context.go('/rescuer-dashboard');
+              await RescuerService.completeJob(widget.requestId);
 
-              ScaffoldMessenger.of(context).showSnackBar(
-                const SnackBar(
-                  content: Text('Service completed successfully!'),
-                  backgroundColor: Colors.green,
-                ),
-              );
+              if (mounted) {
+                final provider =
+                    Provider.of<TrackingProvider>(context, listen: false);
+                provider.stopUserTracking();
+                provider.stopRescuerTracking();
+                context.go('/rescuer-dashboard');
+
+                ScaffoldMessenger.of(context).showSnackBar(
+                  const SnackBar(
+                    content: Text('✅ Service completed successfully!'),
+                    backgroundColor: Colors.green,
+                  ),
+                );
+              }
             },
-            child: const Text('Complete Service'),
+            child: const Text('Complete'),
           ),
         ],
       ),
@@ -139,7 +166,6 @@ class _NavigationMapScreenState extends State<NavigationMapScreen> {
       ),
       body: Consumer<TrackingProvider>(
         builder: (context, trackingProvider, child) {
-          // Show loading state
           if (!_isInitialized || !trackingProvider.hasUserLocation) {
             return Center(
               child: Column(
@@ -152,25 +178,17 @@ class _NavigationMapScreenState extends State<NavigationMapScreen> {
                         'Initializing navigation...',
                     textAlign: TextAlign.center,
                   ),
-                  if (trackingProvider.errorMessage != null) ...[
-                    const SizedBox(height: 16),
-                    ElevatedButton(
-                      onPressed: () => _initializeTracking(),
-                      child: const Text('Retry'),
-                    ),
-                  ],
                 ],
               ),
             );
           }
 
-          // Show map with both locations
           return Stack(
             children: [
-              // Google Map with live markers and polylines
+              // ─── Google Map ───────────────────────────────────────────
               GoogleMap(
                 initialCameraPosition: CameraPosition(
-                  target: trackingProvider.userLatLng!, // Rescuer's location
+                  target: trackingProvider.userLatLng!,
                   zoom: 13.0,
                 ),
                 markers: trackingProvider.markers,
@@ -178,69 +196,59 @@ class _NavigationMapScreenState extends State<NavigationMapScreen> {
                 myLocationEnabled: true,
                 myLocationButtonEnabled: true,
                 zoomControlsEnabled: false,
-                mapType: MapType.normal,
                 onMapCreated: (GoogleMapController controller) {
                   _mapController = controller;
                   _centerCameraToBothLocations();
                 },
               ),
 
-              // Distance indicator at top
-              if (trackingProvider.hasRescuerLocation)
-                Positioned(
-                  top: 16,
-                  left: 16,
-                  right: 16,
-                  child: Container(
-                    padding: const EdgeInsets.all(12),
-                    decoration: BoxDecoration(
-                      color: Colors.white,
-                      borderRadius: BorderRadius.circular(12),
-                      boxShadow: const [
-                        BoxShadow(
+              // ─── Distance Info ────────────────────────────────────────
+              Positioned(
+                top: 16,
+                left: 16,
+                right: 16,
+                child: Container(
+                  padding: const EdgeInsets.all(12),
+                  decoration: BoxDecoration(
+                    color: Colors.white,
+                    borderRadius: BorderRadius.circular(12),
+                    boxShadow: const [
+                      BoxShadow(
                           color: Colors.black12,
                           blurRadius: 8,
-                          offset: Offset(0, 2),
-                        ),
-                      ],
-                    ),
-                    child: Row(
-                      mainAxisAlignment: MainAxisAlignment.center,
-                      children: [
-                        const Icon(
-                          Icons.navigation,
-                          color: AppColors.accent,
-                          size: 20,
-                        ),
-                        const SizedBox(width: 8),
-                        Text(
-                          'Customer is ${trackingProvider.getDistanceBetweenUserAndRescuer()?.toStringAsFixed(2) ?? "N/A"} km away',
-                          style: const TextStyle(
-                            fontWeight: FontWeight.bold,
-                            fontSize: 16,
-                          ),
-                        ),
-                      ],
-                    ),
+                          offset: Offset(0, 2)),
+                    ],
                   ),
-                ),
-
-              // Center camera button
-              Positioned(
-                right: 16,
-                top: 90,
-                child: FloatingActionButton.small(
-                  heroTag: 'center_camera_rescuer',
-                  backgroundColor: Colors.white,
-                  onPressed: _centerCameraToBothLocations,
-                  child: const Icon(
-                    Icons.center_focus_strong,
-                    color: AppColors.primary,
+                  child: Row(
+                    mainAxisAlignment: MainAxisAlignment.center,
+                    children: [
+                      const Icon(Icons.navigation,
+                          color: AppColors.primary, size: 20),
+                      const SizedBox(width: 8),
+                      Text(
+                        'Customer is ${trackingProvider.formattedDistance} away',
+                        style: const TextStyle(
+                            fontWeight: FontWeight.bold, fontSize: 16),
+                      ),
+                    ],
                   ),
                 ),
               ),
 
-              // Customer details bottom sheet
+              // ─── Center Button ────────────────────────────────────────
+              Positioned(
+                right: 16,
+                top: 90,
+                child: FloatingActionButton.small(
+                  heroTag: 'center_nav',
+                  backgroundColor: Colors.white,
+                  onPressed: _centerCameraToBothLocations,
+                  child: const Icon(Icons.center_focus_strong,
+                      color: AppColors.primary),
+                ),
+              ),
+
+              // ─── Bottom Sheet ─────────────────────────────────────────
               Positioned(
                 bottom: 0,
                 left: 0,
@@ -249,58 +257,47 @@ class _NavigationMapScreenState extends State<NavigationMapScreen> {
                   padding: const EdgeInsets.all(24),
                   decoration: const BoxDecoration(
                     color: Colors.white,
-                    borderRadius: BorderRadius.vertical(
-                      top: Radius.circular(24),
-                    ),
+                    borderRadius:
+                        BorderRadius.vertical(top: Radius.circular(24)),
                     boxShadow: [
                       BoxShadow(
-                        color: Colors.black12,
-                        blurRadius: 10,
-                        offset: Offset(0, -5),
-                      ),
+                          color: Colors.black12,
+                          blurRadius: 10,
+                          offset: Offset(0, -5)),
                     ],
                   ),
                   child: Column(
                     mainAxisSize: MainAxisSize.min,
                     children: [
-                      const Row(
+                      Row(
                         children: [
-                          CircleAvatar(
+                          const CircleAvatar(
                             radius: 25,
                             backgroundColor: AppColors.secondary,
-                            child: Icon(Icons.person, color: Colors.white),
+                            child:
+                                Icon(Icons.person, color: Colors.white),
                           ),
-                          SizedBox(width: 12),
+                          const SizedBox(width: 12),
                           Expanded(
                             child: Column(
                               crossAxisAlignment: CrossAxisAlignment.start,
                               children: [
                                 Text(
-                                  'Usman Ahmed',
-                                  style: TextStyle(
-                                    fontWeight: FontWeight.bold,
-                                    fontSize: 16,
-                                  ),
+                                  widget.customerName,
+                                  style: const TextStyle(
+                                      fontWeight: FontWeight.bold,
+                                      fontSize: 16),
                                 ),
-                                Text('Problem: Battery Jump-start'),
+                                Text('Problem: ${widget.problemType}'),
                               ],
                             ),
                           ),
-                        ],
-                      ),
-                      const SizedBox(height: 16),
-                      Row(
-                        children: [
-                          const Icon(
-                            Icons.location_on,
-                            size: 16,
-                            color: AppColors.secondary,
-                          ),
-                          const SizedBox(width: 8),
-                          Expanded(
-                            child: Text(
-                              'Distance: ${trackingProvider.getDistanceBetweenUserAndRescuer()?.toStringAsFixed(2) ?? "N/A"} km',
-                            ),
+                          Text(
+                            'PKR ${widget.finalFare}',
+                            style: const TextStyle(
+                                fontWeight: FontWeight.bold,
+                                fontSize: 16,
+                                color: AppColors.primary),
                           ),
                         ],
                       ),
@@ -312,29 +309,22 @@ class _NavigationMapScreenState extends State<NavigationMapScreen> {
                               onPressed: () {
                                 trackingProvider.stopUserTracking();
                                 trackingProvider.stopRescuerTracking();
-
                                 context.go('/rescuer-dashboard');
-                                ScaffoldMessenger.of(context).showSnackBar(
-                                  const SnackBar(
-                                    content: Text('Request cancelled'),
-                                    backgroundColor: AppColors.error,
-                                  ),
-                                );
                               },
                               style: OutlinedButton.styleFrom(
                                 foregroundColor: AppColors.error,
-                                side: const BorderSide(color: AppColors.error),
+                                side: const BorderSide(
+                                    color: AppColors.error),
                               ),
-                              child: const Text('Cancel Request'),
+                              child: const Text('Cancel'),
                             ),
                           ),
                           const SizedBox(width: 12),
                           Expanded(
                             child: ElevatedButton(
-                              onPressed: () => _showOTPPrompt(context),
+                              onPressed: _showCompleteDialog,
                               style: ElevatedButton.styleFrom(
-                                backgroundColor: AppColors.primary,
-                              ),
+                                  backgroundColor: AppColors.primary),
                               child: const Text('I have Arrived'),
                             ),
                           ),
