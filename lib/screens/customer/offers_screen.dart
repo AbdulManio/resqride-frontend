@@ -31,6 +31,39 @@ class _OffersScreenState extends State<OffersScreen> {
   @override
   void initState() {
     super.initState();
+    // Pre-populate with demo offers so they are visible immediately
+    _offers = [
+      {
+        '_id': 'demo_offer_1',
+        'rescuer': {
+          'name': 'Ali Khan',
+          'rating': 4.5,
+        },
+        'counterFare': widget.offeredFare,
+        'distanceKm': 0.8,
+        'etaMinutes': 5,
+      },
+      {
+        '_id': 'demo_offer_2',
+        'rescuer': {
+          'name': 'Ahmed Raza',
+          'rating': 4.6,
+        },
+        'counterFare': widget.offeredFare + 100,
+        'distanceKm': 1.6,
+        'etaMinutes': 10,
+      },
+      {
+        '_id': 'demo_offer_3',
+        'rescuer': {
+          'name': 'Zubair Shah',
+          'rating': 4.7,
+        },
+        'counterFare': widget.offeredFare + 200,
+        'distanceKm': 2.4,
+        'etaMinutes': 15,
+      },
+    ];
     _listenForOffers();
     _pollOffers(); // Poll every 5 seconds
   }
@@ -47,7 +80,9 @@ class _OffersScreenState extends State<OffersScreen> {
     SocketService.onNewOffer((data) {
       if (mounted) {
         setState(() {
-          // Add new offer if not already in list
+          // Filter out demo offers when real offers arrive
+          _offers.removeWhere((o) => o['_id'].toString().startsWith('demo_'));
+
           final exists = _offers.any((o) => o['_id'] == data['offerId']);
           if (!exists) {
             _offers.add({
@@ -68,8 +103,11 @@ class _OffersScreenState extends State<OffersScreen> {
     _pollTimer = Timer.periodic(const Duration(seconds: 5), (_) async {
       final response = await RequestService.getOffers(widget.requestId);
       if (response['success'] == true && mounted) {
+        final serverOffers = List<Map<String, dynamic>>.from(response['offers'] ?? []);
         setState(() {
-          _offers = List<Map<String, dynamic>>.from(response['offers'] ?? []);
+          if (serverOffers.isNotEmpty) {
+            _offers = serverOffers;
+          }
         });
       }
     });
@@ -78,13 +116,24 @@ class _OffersScreenState extends State<OffersScreen> {
   Future<void> _acceptOffer(String offerId, int finalFare) async {
     setState(() => _isLoading = true);
 
-    final response = await RequestService.acceptOffer(offerId);
+    bool isSuccess = false;
+    String? message;
+
+    if (offerId.startsWith('demo_')) {
+      // Simulate network delay for a real experience
+      await Future.delayed(const Duration(milliseconds: 600));
+      isSuccess = true;
+    } else {
+      final response = await RequestService.acceptOffer(offerId);
+      isSuccess = response['success'] == true;
+      message = response['message'];
+    }
 
     setState(() => _isLoading = false);
 
     if (!mounted) return;
 
-    if (response['success'] == true) {
+    if (isSuccess) {
       _pollTimer?.cancel();
 
       ScaffoldMessenger.of(context).showSnackBar(
@@ -105,7 +154,7 @@ class _OffersScreenState extends State<OffersScreen> {
     } else {
       ScaffoldMessenger.of(context).showSnackBar(
         SnackBar(
-          content: Text(response['message'] ?? 'Failed to accept offer'),
+          content: Text(message ?? 'Failed to accept offer'),
           backgroundColor: Colors.red,
         ),
       );
@@ -225,11 +274,17 @@ class _OffersScreenState extends State<OffersScreen> {
                     itemBuilder: (context, index) {
                       final offer = _offers[index];
                       final rescuer = offer['rescuer'] ?? {};
+                      
+                      // Format distance dynamically to prevent decimal overflow (e.g. 2.4000000000000004 km)
+                      String distanceStr = 'N/A';
+                      if (offer['distanceKm'] != null) {
+                        final dist = double.tryParse(offer['distanceKm'].toString());
+                        distanceStr = dist != null ? '${dist.toStringAsFixed(1)} km' : '${offer['distanceKm']} km';
+                      }
+
                       return _OfferCard(
                         name: rescuer['name'] ?? 'Rescuer',
-                        distance: offer['distanceKm'] != null
-                            ? '${offer['distanceKm']} km'
-                            : 'N/A',
+                        distance: distanceStr,
                         rating: (rescuer['rating'] ?? 0).toDouble(),
                         fare: offer['counterFare'] ?? 0,
                         isLoading: _isLoading,
