@@ -6,7 +6,6 @@ import '../../core/theme/app_theme.dart';
 import '../../providers/tracking_provider.dart';
 import '../../services/socket_service.dart';
 import '../../services/request_service.dart';
-import 'package:google_maps_flutter/google_maps_flutter.dart';
 
 class TrackingScreen extends StatefulWidget {
   final String requestId;
@@ -27,6 +26,7 @@ class _TrackingScreenState extends State<TrackingScreen> {
   bool _isInitialized = false;
   String _rescuerName = 'Rescuer';
   String _rescuerVehicle = '';
+  String? _rescuerProfileUrl;
 
   @override
   void initState() {
@@ -47,9 +47,29 @@ class _TrackingScreenState extends State<TrackingScreen> {
       provider.startRescuerTracking(enableBackground: true);
       setState(() => _isInitialized = true);
       _centerCameraToBothLocations();
+      _loadActiveRequestDetails();
     } else {
       if (mounted && provider.errorMessage != null) {
         _showErrorDialog('Initialization Error', provider.errorMessage!);
+      }
+    }
+  }
+
+  Future<void> _loadActiveRequestDetails() async {
+    final response = await RequestService.getActiveRequest();
+    if (response['success'] == true && mounted) {
+      final request = response['request'];
+      if (request != null && request['rescuer'] != null) {
+        final rescuer = request['rescuer'];
+        setState(() {
+          _rescuerName = rescuer['name'] ?? 'Rescuer';
+          _rescuerProfileUrl = rescuer['profilePicture'] ??
+              rescuer['avatar'] ??
+              rescuer['profileImage'] ??
+              rescuer['profilePic'] ??
+              rescuer['profilePhoto'] ??
+              rescuer['profile'];
+        });
       }
     }
   }
@@ -312,11 +332,18 @@ class _TrackingScreenState extends State<TrackingScreen> {
                     children: [
                       Row(
                         children: [
-                          const CircleAvatar(
+                           CircleAvatar(
                             radius: 30,
                             backgroundColor: AppColors.primary,
-                            child: Icon(Icons.person,
-                                size: 30, color: Colors.white),
+                            backgroundImage: (_rescuerProfileUrl != null &&
+                                    _rescuerProfileUrl!.isNotEmpty)
+                                ? NetworkImage(_rescuerProfileUrl!)
+                                : null,
+                            child: (_rescuerProfileUrl == null ||
+                                    _rescuerProfileUrl!.isEmpty)
+                                ? const Icon(Icons.person,
+                                    size: 30, color: Colors.white)
+                                : null,
                           ),
                           const SizedBox(width: 16),
                           Expanded(

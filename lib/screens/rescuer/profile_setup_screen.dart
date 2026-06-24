@@ -341,9 +341,10 @@ class _ProfileSetupScreenState extends State<ProfileSetupScreen> {
                 style: ElevatedButton.styleFrom(
                   minimumSize: const Size.fromHeight(56),
                   backgroundColor: AppColors.primary,
+                  foregroundColor: AppColors.secondary,
                 ),
                 child: _isLoading
-                    ? const CircularProgressIndicator(color: Colors.white)
+                    ? const CircularProgressIndicator(color: AppColors.secondary)
                     : const Text(
                         'Submit for Approval',
                         style: TextStyle(

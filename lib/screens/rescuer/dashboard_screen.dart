@@ -118,7 +118,7 @@ class _RescuerDashboardScreenState extends State<RescuerDashboardScreen> {
                         height: 20,
                         child: CircularProgressIndicator(
                           strokeWidth: 2,
-                          color: Colors.white,
+                          color: AppColors.secondary,
                         ),
                       ),
                     )

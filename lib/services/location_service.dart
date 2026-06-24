@@ -1,7 +1,9 @@
 import 'dart:async';
+import 'dart:convert';
 import 'package:flutter/foundation.dart';
 import 'package:geolocator/geolocator.dart';
 import 'package:geocoding/geocoding.dart';
+import 'package:http/http.dart' as http;
 
 /// Service to handle location permissions and real-time GPS tracking
 /// Optimized for battery efficiency and high accuracy with background support
@@ -116,7 +118,21 @@ class LocationService {
       }
       return "Unknown Address";
     } catch (e) {
-      debugPrint('Error getting address: $e');
+      debugPrint('Error getting address via system geocoder, trying Nominatim: $e');
+      try {
+        final url = Uri.parse(
+            'https://nominatim.openstreetmap.org/reverse?lat=$latitude&lon=$longitude&format=json');
+        final response = await http.get(url, headers: {'User-Agent': 'RescueRide-App'});
+        if (response.statusCode == 200) {
+          final Map<String, dynamic> data = json.decode(response.body);
+          final displayName = data['display_name'];
+          if (displayName != null) {
+            return displayName.toString();
+          }
+        }
+      } catch (err) {
+        debugPrint('Nominatim reverse geocoding fallback error: $err');
+      }
       return "Address not found";
     }
   }
@@ -130,7 +146,26 @@ class LocationService {
       }
       return null;
     } catch (e) {
-      debugPrint('Error searching address: $e');
+      debugPrint('Error searching address via system geocoder, trying Nominatim: $e');
+      try {
+        final url = Uri.parse(
+            'https://nominatim.openstreetmap.org/search?q=${Uri.encodeComponent(address)}&format=json&limit=1');
+        final response = await http.get(url, headers: {'User-Agent': 'RescueRide-App'});
+        if (response.statusCode == 200) {
+          final List<dynamic> data = json.decode(response.body);
+          if (data.isNotEmpty) {
+            final lat = double.parse(data[0]['lat']);
+            final lon = double.parse(data[0]['lon']);
+            return Location(
+              latitude: lat,
+              longitude: lon,
+              timestamp: DateTime.now(),
+            );
+          }
+        }
+      } catch (err) {
+        debugPrint('Nominatim search fallback error: $err');
+      }
       return null;
     }
   }

@@ -31,40 +31,8 @@ class _OffersScreenState extends State<OffersScreen> {
   @override
   void initState() {
     super.initState();
-    // Pre-populate with demo offers so they are visible immediately
-    _offers = [
-      {
-        '_id': 'demo_offer_1',
-        'rescuer': {
-          'name': 'Ali Khan',
-          'rating': 4.5,
-        },
-        'counterFare': widget.offeredFare,
-        'distanceKm': 0.8,
-        'etaMinutes': 5,
-      },
-      {
-        '_id': 'demo_offer_2',
-        'rescuer': {
-          'name': 'Ahmed Raza',
-          'rating': 4.6,
-        },
-        'counterFare': widget.offeredFare + 100,
-        'distanceKm': 1.6,
-        'etaMinutes': 10,
-      },
-      {
-        '_id': 'demo_offer_3',
-        'rescuer': {
-          'name': 'Zubair Shah',
-          'rating': 4.7,
-        },
-        'counterFare': widget.offeredFare + 200,
-        'distanceKm': 2.4,
-        'etaMinutes': 15,
-      },
-    ];
     _listenForOffers();
+    _fetchOffers(); // Fetch offers immediately
     _pollOffers(); // Poll every 5 seconds
   }
 
@@ -75,6 +43,17 @@ class _OffersScreenState extends State<OffersScreen> {
     super.dispose();
   }
 
+  // Fetch offers immediately from backend
+  Future<void> _fetchOffers() async {
+    final response = await RequestService.getOffers(widget.requestId);
+    if (response['success'] == true && mounted) {
+      final serverOffers = List<Map<String, dynamic>>.from(response['offers'] ?? []);
+      setState(() {
+        _offers = serverOffers;
+      });
+    }
+  }
+
   // Listen for real-time offers via socket
   void _listenForOffers() {
     SocketService.onNewOffer((data) {
@@ -83,10 +62,11 @@ class _OffersScreenState extends State<OffersScreen> {
           // Filter out demo offers when real offers arrive
           _offers.removeWhere((o) => o['_id'].toString().startsWith('demo_'));
 
-          final exists = _offers.any((o) => o['_id'] == data['offerId']);
-          if (!exists) {
+          final offerId = data['_id'] ?? data['offerId'] ?? data['id'] ?? '';
+          final exists = _offers.any((o) => (o['_id'] ?? o['id'] ?? '') == offerId);
+          if (!exists && offerId.toString().isNotEmpty) {
             _offers.add({
-              '_id': data['offerId'],
+              '_id': offerId,
               'rescuer': data['rescuer'],
               'counterFare': data['counterFare'],
               'distanceKm': data['distanceKm'],
@@ -105,9 +85,7 @@ class _OffersScreenState extends State<OffersScreen> {
       if (response['success'] == true && mounted) {
         final serverOffers = List<Map<String, dynamic>>.from(response['offers'] ?? []);
         setState(() {
-          if (serverOffers.isNotEmpty) {
-            _offers = serverOffers;
-          }
+          _offers = serverOffers;
         });
       }
     });
@@ -282,11 +260,20 @@ class _OffersScreenState extends State<OffersScreen> {
                         distanceStr = dist != null ? '${dist.toStringAsFixed(1)} km' : '${offer['distanceKm']} km';
                       }
 
+                      final profileUrl = rescuer['profilePicture'] ??
+                          rescuer['avatar'] ??
+                          rescuer['profileImage'] ??
+                          rescuer['profilePic'] ??
+                          rescuer['profilePhoto'] ??
+                          rescuer['profile'] ??
+                          '';
+
                       return _OfferCard(
                         name: rescuer['name'] ?? 'Rescuer',
                         distance: distanceStr,
                         rating: (rescuer['rating'] ?? 0).toDouble(),
                         fare: offer['counterFare'] ?? 0,
+                        profileUrl: profileUrl.toString(),
                         isLoading: _isLoading,
                         onAccept: () => _acceptOffer(
                           offer['_id'],
@@ -310,6 +297,7 @@ class _OfferCard extends StatelessWidget {
   final String distance;
   final double rating;
   final int fare;
+  final String? profileUrl;
   final bool isLoading;
   final VoidCallback onAccept;
   final VoidCallback onReject;
@@ -319,6 +307,7 @@ class _OfferCard extends StatelessWidget {
     required this.distance,
     required this.rating,
     required this.fare,
+    this.profileUrl,
     required this.isLoading,
     required this.onAccept,
     required this.onReject,
@@ -335,10 +324,15 @@ class _OfferCard extends StatelessWidget {
           children: [
             Row(
               children: [
-                const CircleAvatar(
+                CircleAvatar(
                   radius: 25,
                   backgroundColor: AppColors.primary,
-                  child: Icon(Icons.person, color: Colors.white),
+                  backgroundImage: (profileUrl != null && profileUrl!.isNotEmpty)
+                      ? NetworkImage(profileUrl!)
+                      : null,
+                  child: (profileUrl == null || profileUrl!.isEmpty)
+                      ? const Icon(Icons.person, color: Colors.white)
+                      : null,
                 ),
                 const SizedBox(width: 12),
                 Expanded(
@@ -366,7 +360,7 @@ class _OfferCard extends StatelessWidget {
                   style: const TextStyle(
                     fontWeight: FontWeight.bold,
                     fontSize: 20,
-                    color: AppColors.primary,
+                    color: AppColors.secondary,
                   ),
                 ),
               ],

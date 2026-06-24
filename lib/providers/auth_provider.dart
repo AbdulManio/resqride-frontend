@@ -28,10 +28,14 @@ class AuthProvider extends ChangeNotifier {
     required String name,
     required String email,
     required String phoneNumber,
+    String? address,
+    String? vehicleInfo,
   }) {
     _name = name;
     _email = email;
     _phoneNumber = phoneNumber;
+    _address = address;
+    _vehicleInfo = vehicleInfo;
     _isLoggedIn = true;
     notifyListeners();
   }

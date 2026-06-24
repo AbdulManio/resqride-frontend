@@ -45,29 +45,39 @@ class _OTPScreenState extends State<OTPScreen> {
     if (!mounted) return;
 
     if (response['success'] == true) {
-      final user = response['user'];
+      final user = response['user'] as Map<String, dynamic>?;
       final bool isNewUser = response['isNewUser'] ?? true;
+
+      final String userName = user != null ? (user['name'] ?? '') : '';
+      final String userEmail = user != null ? (user['email'] ?? '') : '';
+      final String userPhone = user != null ? (user['phone'] ?? phone) : phone;
+      final String? userAddress = user != null ? user['address'] : null;
+      final String? userVehicle = user != null ? user['vehicleInfo'] : null;
 
       // Update local auth provider with real user data
       authProvider.login(
-        name: user['name'] ?? '',
-        email: user['email'] ?? '',
-        phoneNumber: user['phone'] ?? phone,
+        name: userName,
+        email: userEmail,
+        phoneNumber: userPhone,
+        address: userAddress,
+        vehicleInfo: userVehicle,
       );
 
       // Connect socket with real userId
-      await SocketService.connect(user['_id']);
+      if (user != null && user['_id'] != null) {
+        await SocketService.connect(user['_id']);
+      }
 
       await NotificationService.saveTokenAfterLogin();
 
-      if (isNewUser) {
-        // New user → complete profile
+      if (isNewUser || userName.isEmpty || userEmail.isEmpty) {
+        // New user or incomplete profile → complete profile
         context.push('/registration');
       } else {
         // Returning user → go to dashboard
-        final role = user['role'];
+        final role = user != null ? user['role'] : '';
         if (role == 'rescuer') {
-          final status = user['accountStatus'];
+          final status = user != null ? user['accountStatus'] : 'pending';
           if (status == 'pending') {
             context.go('/account-status');
           } else {
@@ -114,111 +124,110 @@ class _OTPScreenState extends State<OTPScreen> {
     final authProvider = context.watch<AuthProvider>();
 
     return Scaffold(
-      body: Container(
-        decoration: BoxDecoration(
-          gradient: LinearGradient(
-            begin: Alignment.topCenter,
-            end: Alignment.bottomCenter,
-            colors: [
-              AppColors.primary,
-              AppColors.primary.withOpacity(0.8),
-            ],
-          ),
+      appBar: AppBar(
+        title: const Text('Verification'),
+        leading: IconButton(
+          icon: const Icon(Icons.arrow_back),
+          onPressed: () => context.pop(),
         ),
-        child: SafeArea(
-          child: Padding(
-            padding: const EdgeInsets.all(24.0),
-            child: Column(
-              crossAxisAlignment: CrossAxisAlignment.start,
-              children: [
-                IconButton(
-                  icon: const Icon(Icons.arrow_back, color: Colors.white),
-                  onPressed: () => context.pop(),
+      ),
+      body: SafeArea(
+        child: Padding(
+          padding: const EdgeInsets.symmetric(horizontal: 24.0, vertical: 16.0),
+          child: Column(
+            crossAxisAlignment: CrossAxisAlignment.start,
+            children: [
+              const SizedBox(height: 24),
+              const Text(
+                'Enter verification code',
+                style: TextStyle(
+                  fontSize: 26,
+                  fontWeight: FontWeight.bold,
+                  color: AppColors.secondary,
                 ),
-                const SizedBox(height: 32),
-                const Text(
-                  'Enter verification code',
-                  style: TextStyle(
-                    fontSize: 28,
-                    fontWeight: FontWeight.bold,
-                    color: Colors.white,
-                  ),
+              ),
+              const SizedBox(height: 8),
+              Text(
+                'Code sent to ${authProvider.phoneNumber ?? ''}',
+                style: const TextStyle(
+                  color: AppColors.textSecondary,
+                  fontSize: 16,
                 ),
-                const SizedBox(height: 12),
-                Text(
-                  'Code sent to ${authProvider.phoneNumber ?? ''}',
-                  style: const TextStyle(color: Colors.white70, fontSize: 16),
-                ),
-                const SizedBox(height: 48),
-                Row(
-                  mainAxisAlignment: MainAxisAlignment.spaceBetween,
-                  children: List.generate(
-                    4,
-                    (index) => Container(
-                      width: 70,
-                      height: 70,
-                      decoration: BoxDecoration(
-                        color: Colors.white,
-                        borderRadius: BorderRadius.circular(12),
-                      ),
-                      child: TextField(
-                        controller: _controllers[index],
-                        focusNode: _focusNodes[index],
-                        textAlign: TextAlign.center,
-                        keyboardType: TextInputType.number,
-                        maxLength: 1,
-                        style: const TextStyle(
-                            fontSize: 24, fontWeight: FontWeight.bold),
-                        decoration: InputDecoration(
-                          counterText: '',
-                          border: OutlineInputBorder(
-                            borderRadius: BorderRadius.circular(12),
-                            borderSide: BorderSide.none,
-                          ),
+              ),
+              const SizedBox(height: 40),
+              Row(
+                mainAxisAlignment: MainAxisAlignment.spaceBetween,
+                children: List.generate(
+                  4,
+                  (index) => Container(
+                    width: 70,
+                    height: 70,
+                    decoration: BoxDecoration(
+                      color: Colors.white,
+                      borderRadius: BorderRadius.circular(12),
+                      boxShadow: [
+                        BoxShadow(
+                          color: Colors.black.withValues(alpha: 0.04),
+                          blurRadius: 6,
+                          offset: const Offset(0, 2),
                         ),
-                        onChanged: (value) {
-                          if (value.isNotEmpty && index < 3) {
-                            _focusNodes[index + 1].requestFocus();
-                          } else if (value.isEmpty && index > 0) {
-                            _focusNodes[index - 1].requestFocus();
-                          }
-                          // Auto-verify when all 4 digits entered
-                          if (_otpCode.length == 4) {
-                            _verifyOtp();
-                          }
-                        },
+                      ],
+                    ),
+                    child: TextField(
+                      controller: _controllers[index],
+                      focusNode: _focusNodes[index],
+                      textAlign: TextAlign.center,
+                      keyboardType: TextInputType.number,
+                      maxLength: 1,
+                      style: const TextStyle(
+                          fontSize: 24, fontWeight: FontWeight.bold),
+                      decoration: InputDecoration(
+                        counterText: '',
+                        border: OutlineInputBorder(
+                          borderRadius: BorderRadius.circular(12),
+                          borderSide: BorderSide.none,
+                        ),
                       ),
+                      onChanged: (value) {
+                        if (value.isNotEmpty && index < 3) {
+                          _focusNodes[index + 1].requestFocus();
+                        } else if (value.isEmpty && index > 0) {
+                          _focusNodes[index - 1].requestFocus();
+                        }
+                        // Auto-verify when all 4 digits entered
+                        if (_otpCode.length == 4) {
+                          _verifyOtp();
+                        }
+                      },
                     ),
                   ),
                 ),
-                const SizedBox(height: 32),
-                Center(
-                  child: TextButton(
-                    onPressed: _resendOtp,
-                    child: const Text(
-                      'Resend Code',
-                      style: TextStyle(color: Colors.white, fontSize: 16),
-                    ),
+              ),
+              const SizedBox(height: 32),
+              Center(
+                child: TextButton(
+                  onPressed: _resendOtp,
+                  child: const Text(
+                    'Resend Code',
+                    style: TextStyle(fontSize: 16),
                   ),
                 ),
-                const Spacer(),
-                ElevatedButton(
-                  onPressed: _isLoading ? null : _verifyOtp,
-                  style: ElevatedButton.styleFrom(
-                    backgroundColor: Colors.white,
-                    foregroundColor: AppColors.primary,
-                    minimumSize: const Size.fromHeight(56),
-                  ),
-                  child: _isLoading
-                      ? const CircularProgressIndicator(
-                          color: AppColors.primary)
-                      : const Text('Verify',
-                          style: TextStyle(
-                              fontSize: 18, fontWeight: FontWeight.bold)),
+              ),
+              const Spacer(),
+              ElevatedButton(
+                onPressed: _isLoading ? null : _verifyOtp,
+                style: ElevatedButton.styleFrom(
+                  minimumSize: const Size.fromHeight(56),
                 ),
-                const SizedBox(height: 24),
-              ],
-            ),
+                child: _isLoading
+                    ? const CircularProgressIndicator(
+                        color: AppColors.secondary)
+                    : const Text('Verify',
+                        style: TextStyle(
+                            fontSize: 18, fontWeight: FontWeight.bold)),
+              ),
+              const SizedBox(height: 24),
+            ],
           ),
         ),
       ),

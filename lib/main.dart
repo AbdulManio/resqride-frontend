@@ -5,6 +5,7 @@ import 'providers/auth_provider.dart';
 import 'providers/tracking_provider.dart';
 import 'router/app_router.dart';
 import 'services/notification_service.dart';
+import 'core/theme/app_theme.dart';
 
 void main() async {
   WidgetsFlutterBinding.ensureInitialized();
@@ -31,6 +32,7 @@ class RescueRideApp extends StatelessWidget {
       child: MaterialApp.router(
         title: 'RescueRide',
         debugShowCheckedModeBanner: false,
+        theme: AppTheme.lightTheme,
         routerConfig: AppRouter.router,
       ),
     );

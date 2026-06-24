@@ -47,10 +47,14 @@ class AuthService {
   static Future<Map<String, dynamic>> register({
     required String name,
     required String email,
+    String? vehicleInfo,
+    String? address,
   }) async {
     final response = await ApiService.authPost('/auth/register', {
       'name': name,
       'email': email,
+      if (vehicleInfo != null) 'vehicleInfo': vehicleInfo,
+      if (address != null) 'address': address,
     });
 
     // Update saved user with name and email
