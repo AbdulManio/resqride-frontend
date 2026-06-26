@@ -20,6 +20,8 @@ import '../screens/rescuer/incoming_requests_screen.dart';
 import '../screens/rescuer/fare_offer_screen.dart';
 import '../screens/rescuer/navigation_map_screen.dart';
 import '../screens/rescuer/account_status_screen.dart';
+import '../screens/customer/privacy_security_screen.dart';
+import '../screens/customer/help_support_screen.dart';
 
 class AppRouter {
   static final GoRouter router = GoRouter(
@@ -135,6 +137,14 @@ class AppRouter {
             problemType: extra['problemType'] ?? '',
           );
         },
+      ),
+      GoRoute(
+        path: '/privacy-security',
+        builder: (context, state) => const PrivacySecurityScreen(),
+      ),
+      GoRoute(
+        path: '/help-support',
+        builder: (context, state) => const HelpSupportScreen(),
       ),
       GoRoute(
         path: '/navigation-map',
