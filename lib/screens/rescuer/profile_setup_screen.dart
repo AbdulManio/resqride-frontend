@@ -3,9 +3,7 @@ import 'package:flutter/material.dart';
 import 'package:go_router/go_router.dart';
 import 'package:image_picker/image_picker.dart';
 import 'package:http/http.dart' as http;
-import 'package:provider/provider.dart';
 import '../../core/theme/app_theme.dart';
-import '../../providers/auth_provider.dart';
 import '../../services/api_service.dart';
 import '../../services/request_service.dart';
 
@@ -18,14 +16,27 @@ class ProfileSetupScreen extends StatefulWidget {
 
 class _ProfileSetupScreenState extends State<ProfileSetupScreen> {
   final _formKey = GlobalKey<FormState>();
-  final _vehicleController = TextEditingController();
+  final _shopNameController = TextEditingController();
+  final _shopAddressController = TextEditingController();
   final _vehicleModelController = TextEditingController();
   final _numberPlateController = TextEditingController();
+
   bool _isShopOwner = false;
   bool _isLoading = false;
+  String? _selectedVehicleType;
   final Map<String, String> _uploadedFiles = {};
   final Set<String> _selectedServices = {};
   final ImagePicker _picker = ImagePicker();
+
+  final List<String> _vehicleTypes = [
+    'Bike',
+    'Rickshaw',
+    'Car',
+    'SUV',
+    'Van',
+    'Truck',
+    'Other',
+  ];
 
   Future<void> _pickDocument(String key, String docType) async {
     showModalBottomSheet(
@@ -35,8 +46,9 @@ class _ProfileSetupScreenState extends State<ProfileSetupScreen> {
         child: Column(
           mainAxisSize: MainAxisSize.min,
           children: [
-            const Text('Upload Document',
-                style: TextStyle(fontSize: 18, fontWeight: FontWeight.bold)),
+            Text('Upload $docType',
+                style:
+                    const TextStyle(fontSize: 18, fontWeight: FontWeight.bold)),
             const SizedBox(height: 20),
             ListTile(
               leading: const Icon(Icons.camera_alt, color: AppColors.primary),
@@ -69,18 +81,15 @@ class _ProfileSetupScreenState extends State<ProfileSetupScreen> {
     );
   }
 
-  // ─── Upload documents to Cloudinary via backend ───────────────────────────
   Future<bool> _uploadDocuments() async {
     try {
       final token = await ApiService.getToken();
       if (token == null) return false;
 
       final uri = Uri.parse('${ApiService.baseUrl}/users/upload-documents');
-
       final request = http.MultipartRequest('POST', uri);
       request.headers['Authorization'] = 'Bearer $token';
 
-      // Add CNIC photo (front)
       if (_uploadedFiles.containsKey('cnic_front')) {
         request.files.add(await http.MultipartFile.fromPath(
           'cnicPhoto',
@@ -88,7 +97,6 @@ class _ProfileSetupScreenState extends State<ProfileSetupScreen> {
         ));
       }
 
-      // Add license/registration photo
       if (_uploadedFiles.containsKey('registration')) {
         request.files.add(await http.MultipartFile.fromPath(
           'licensePhoto',
@@ -97,9 +105,6 @@ class _ProfileSetupScreenState extends State<ProfileSetupScreen> {
       }
 
       final response = await request.send();
-      final body = await response.stream.bytesToString();
-      print('📤 Upload response: $body');
-
       return response.statusCode == 200;
     } catch (e) {
       print('❌ Upload error: $e');
@@ -107,29 +112,40 @@ class _ProfileSetupScreenState extends State<ProfileSetupScreen> {
     }
   }
 
-  // ─── Submit profile setup to backend ─────────────────────────────────────
   Future<void> _submitProfile() async {
     if (!_formKey.currentState!.validate()) return;
 
     if (_selectedServices.isEmpty) {
       ScaffoldMessenger.of(context).showSnackBar(
-        const SnackBar(content: Text('Please select at least one service')),
+        const SnackBar(
+            content: Text('Please select at least one service'),
+            backgroundColor: Colors.red),
       );
       return;
     }
 
-    if (!_uploadedFiles.containsKey('cnic_front') ||
-        !_uploadedFiles.containsKey('registration')) {
+    // CNIC always required
+    if (!_uploadedFiles.containsKey('cnic_front')) {
       ScaffoldMessenger.of(context).showSnackBar(
         const SnackBar(
-            content: Text('Please upload CNIC and Registration documents')),
+            content: Text('Please upload your CNIC photo'),
+            backgroundColor: Colors.red),
+      );
+      return;
+    }
+
+    // Registration only required for non-shop owners
+    if (!_isShopOwner && !_uploadedFiles.containsKey('registration')) {
+      ScaffoldMessenger.of(context).showSnackBar(
+        const SnackBar(
+            content: Text('Please upload your Vehicle Registration'),
+            backgroundColor: Colors.red),
       );
       return;
     }
 
     setState(() => _isLoading = true);
 
-    // Step 1: Upload documents to Cloudinary
     ScaffoldMessenger.of(context).showSnackBar(
       const SnackBar(content: Text('Uploading documents...')),
     );
@@ -149,14 +165,19 @@ class _ProfileSetupScreenState extends State<ProfileSetupScreen> {
       return;
     }
 
-    // Step 2: Save profile setup
-    final vehicleInfo =
-        '${_vehicleController.text} ${_vehicleModelController.text} - ${_numberPlateController.text}';
+    // Build vehicle info string
+    String vehicleInfo = '';
+    if (_isShopOwner) {
+      vehicleInfo = _shopNameController.text;
+    } else {
+      vehicleInfo =
+          '${_selectedVehicleType ?? ''} ${_vehicleModelController.text} - ${_numberPlateController.text}';
+    }
 
     final response = await RescuerService.setupProfile(
       services: _selectedServices.toList(),
       isShopOwner: _isShopOwner,
-      vehicleInfo: _isShopOwner ? _vehicleController.text : vehicleInfo,
+      vehicleInfo: vehicleInfo,
     );
 
     setState(() => _isLoading = false);
@@ -166,7 +187,7 @@ class _ProfileSetupScreenState extends State<ProfileSetupScreen> {
     if (response['success'] == true) {
       ScaffoldMessenger.of(context).showSnackBar(
         const SnackBar(
-          content: Text('Profile submitted for approval!'),
+          content: Text('Profile submitted for approval! ✅'),
           backgroundColor: Colors.green,
         ),
       );
@@ -199,20 +220,37 @@ class _ProfileSetupScreenState extends State<ProfileSetupScreen> {
             crossAxisAlignment: CrossAxisAlignment.start,
             children: [
               // ─── Shop Owner Toggle ─────────────────────────────────────
-              Row(
-                mainAxisAlignment: MainAxisAlignment.spaceBetween,
-                children: [
-                  const Text('Do you own a shop?',
-                      style:
-                          TextStyle(fontSize: 16, fontWeight: FontWeight.bold)),
-                  Switch(
-                    value: _isShopOwner,
-                    onChanged: (value) => setState(() => _isShopOwner = value),
-                    activeThumbColor: AppColors.primary,
-                  ),
-                ],
+              Container(
+                padding: const EdgeInsets.all(16),
+                decoration: BoxDecoration(
+                  color: AppColors.primary.withOpacity(0.05),
+                  borderRadius: BorderRadius.circular(12),
+                  border: Border.all(color: AppColors.primary.withOpacity(0.2)),
+                ),
+                child: Row(
+                  mainAxisAlignment: MainAxisAlignment.spaceBetween,
+                  children: [
+                    const Column(
+                      crossAxisAlignment: CrossAxisAlignment.start,
+                      children: [
+                        Text('Do you own a shop?',
+                            style: TextStyle(
+                                fontSize: 16, fontWeight: FontWeight.bold)),
+                        Text('Toggle if you operate from a fixed location',
+                            style: TextStyle(fontSize: 12, color: Colors.grey)),
+                      ],
+                    ),
+                    Switch(
+                      value: _isShopOwner,
+                      onChanged: (value) =>
+                          setState(() => _isShopOwner = value),
+                      activeColor: AppColors.primary,
+                    ),
+                  ],
+                ),
               ),
-              const SizedBox(height: 16),
+
+              const SizedBox(height: 24),
               Text(
                 _isShopOwner ? 'Shop Details' : 'Vehicle Details',
                 style:
@@ -220,46 +258,82 @@ class _ProfileSetupScreenState extends State<ProfileSetupScreen> {
               ),
               const SizedBox(height: 16),
 
-              // ─── Vehicle / Shop Info ───────────────────────────────────
-              TextFormField(
-                controller: _vehicleController,
-                decoration: InputDecoration(
-                  labelText: _isShopOwner
-                      ? 'Shop Name'
-                      : 'Vehicle Type (e.g., Bike, Car)',
-                ),
-                validator: (value) => value == null || value.isEmpty
-                    ? 'Please enter ${_isShopOwner ? "shop name" : "vehicle type"}'
-                    : null,
-              ),
-              const SizedBox(height: 16),
-              if (!_isShopOwner) ...[
+              // ─── Shop Details ──────────────────────────────────────────
+              if (_isShopOwner) ...[
                 TextFormField(
-                  controller: _vehicleModelController,
+                  controller: _shopNameController,
                   decoration: const InputDecoration(
-                    labelText: 'Vehicle Make/Model (e.g., Honda City)',
+                    labelText: 'Shop Name',
+                    prefixIcon: Icon(Icons.store),
                   ),
                   validator: (value) => value == null || value.isEmpty
-                      ? 'Please enter vehicle make/model'
+                      ? 'Please enter shop name'
                       : null,
                 ),
                 const SizedBox(height: 16),
-              ],
-              TextFormField(
-                controller: _numberPlateController,
-                decoration: InputDecoration(
-                  labelText:
-                      _isShopOwner ? 'Shop Address' : 'Vehicle Number Plate',
+                TextFormField(
+                  controller: _shopAddressController,
+                  decoration: const InputDecoration(
+                    labelText: 'Shop Address',
+                    prefixIcon: Icon(Icons.location_on),
+                  ),
+                  validator: (value) => value == null || value.isEmpty
+                      ? 'Please enter shop address'
+                      : null,
                 ),
-                validator: (value) => value == null || value.isEmpty
-                    ? 'Please enter ${_isShopOwner ? "address" : "number plate"}'
-                    : null,
-              ),
+              ],
+
+              // ─── Vehicle Details ──────────────────────────────────────
+              if (!_isShopOwner) ...[
+                // Vehicle Type Dropdown
+                DropdownButtonFormField<String>(
+                  value: _selectedVehicleType,
+                  decoration: const InputDecoration(
+                    labelText: 'Vehicle Type',
+                    prefixIcon: Icon(Icons.directions_car),
+                  ),
+                  items: _vehicleTypes
+                      .map((type) => DropdownMenuItem(
+                            value: type,
+                            child: Text(type),
+                          ))
+                      .toList(),
+                  onChanged: (value) =>
+                      setState(() => _selectedVehicleType = value),
+                  validator: (value) =>
+                      value == null ? 'Please select vehicle type' : null,
+                ),
+                const SizedBox(height: 16),
+                TextFormField(
+                  controller: _vehicleModelController,
+                  decoration: const InputDecoration(
+                    labelText: 'Vehicle Make/Model (e.g., Honda CD70)',
+                    prefixIcon: Icon(Icons.car_repair),
+                  ),
+                  validator: (value) => value == null || value.isEmpty
+                      ? 'Please enter vehicle model'
+                      : null,
+                ),
+                const SizedBox(height: 16),
+                TextFormField(
+                  controller: _numberPlateController,
+                  decoration: const InputDecoration(
+                    labelText: 'Vehicle Number Plate (e.g., ABC-123)',
+                    prefixIcon: Icon(Icons.pin),
+                  ),
+                  validator: (value) => value == null || value.isEmpty
+                      ? 'Please enter number plate'
+                      : null,
+                ),
+              ],
 
               // ─── Services ─────────────────────────────────────────────
               const SizedBox(height: 32),
               const Text('Services You Provide',
                   style: TextStyle(fontSize: 18, fontWeight: FontWeight.bold)),
+              const SizedBox(height: 4),
+              const Text('Select all that apply',
+                  style: TextStyle(color: Colors.grey, fontSize: 12)),
               const SizedBox(height: 16),
               Wrap(
                 spacing: 8,
@@ -269,7 +343,7 @@ class _ProfileSetupScreenState extends State<ProfileSetupScreen> {
                     label: 'Puncture Repair',
                     icon: Icons.tire_repair,
                     isSelected: _selectedServices.contains('Puncture Repair'),
-                    onSelected: (selected) => setState(() => selected
+                    onSelected: (s) => setState(() => s
                         ? _selectedServices.add('Puncture Repair')
                         : _selectedServices.remove('Puncture Repair')),
                   ),
@@ -277,7 +351,7 @@ class _ProfileSetupScreenState extends State<ProfileSetupScreen> {
                     label: 'Fuel Delivery',
                     icon: Icons.local_gas_station,
                     isSelected: _selectedServices.contains('Fuel Delivery'),
-                    onSelected: (selected) => setState(() => selected
+                    onSelected: (s) => setState(() => s
                         ? _selectedServices.add('Fuel Delivery')
                         : _selectedServices.remove('Fuel Delivery')),
                   ),
@@ -285,7 +359,7 @@ class _ProfileSetupScreenState extends State<ProfileSetupScreen> {
                     label: 'Battery Jump',
                     icon: Icons.battery_charging_full,
                     isSelected: _selectedServices.contains('Battery Jump'),
-                    onSelected: (selected) => setState(() => selected
+                    onSelected: (s) => setState(() => s
                         ? _selectedServices.add('Battery Jump')
                         : _selectedServices.remove('Battery Jump')),
                   ),
@@ -293,7 +367,7 @@ class _ProfileSetupScreenState extends State<ProfileSetupScreen> {
                     label: 'Minor Repair',
                     icon: Icons.build,
                     isSelected: _selectedServices.contains('Minor Repair'),
-                    onSelected: (selected) => setState(() => selected
+                    onSelected: (s) => setState(() => s
                         ? _selectedServices.add('Minor Repair')
                         : _selectedServices.remove('Minor Repair')),
                   ),
@@ -301,9 +375,25 @@ class _ProfileSetupScreenState extends State<ProfileSetupScreen> {
                     label: 'Towing',
                     icon: Icons.car_repair,
                     isSelected: _selectedServices.contains('Towing'),
-                    onSelected: (selected) => setState(() => selected
+                    onSelected: (s) => setState(() => s
                         ? _selectedServices.add('Towing')
                         : _selectedServices.remove('Towing')),
+                  ),
+                  _ServiceChip(
+                    label: 'Engine Repair',
+                    icon: Icons.engineering,
+                    isSelected: _selectedServices.contains('Engine Repair'),
+                    onSelected: (s) => setState(() => s
+                        ? _selectedServices.add('Engine Repair')
+                        : _selectedServices.remove('Engine Repair')),
+                  ),
+                  _ServiceChip(
+                    label: 'AC Repair',
+                    icon: Icons.air,
+                    isSelected: _selectedServices.contains('AC Repair'),
+                    onSelected: (s) => setState(() => s
+                        ? _selectedServices.add('AC Repair')
+                        : _selectedServices.remove('AC Repair')),
                   ),
                 ],
               ),
@@ -313,26 +403,39 @@ class _ProfileSetupScreenState extends State<ProfileSetupScreen> {
               const Text('Identity Verification',
                   style: TextStyle(fontSize: 18, fontWeight: FontWeight.bold)),
               const SizedBox(height: 16),
+
+              // CNIC always required
               _DocumentUploadTile(
-                title: 'Upload CNIC Photo',
+                title: 'Upload CNIC Photo *',
+                subtitle: 'Required for all rescuers',
                 icon: Icons.badge_outlined,
                 isUploaded: _uploadedFiles.containsKey('cnic_front'),
                 fileName: _uploadedFiles['cnic_front'],
                 onTap: () => _pickDocument('cnic_front', 'CNIC'),
               ),
               const SizedBox(height: 12),
-              _DocumentUploadTile(
-                title: _isShopOwner
-                    ? 'Upload Shop License'
-                    : 'Upload Vehicle Registration',
-                icon: Icons.description_outlined,
-                isUploaded: _uploadedFiles.containsKey('registration'),
-                fileName: _uploadedFiles['registration'],
-                onTap: () => _pickDocument(
-                  'registration',
-                  _isShopOwner ? 'Shop License' : 'Vehicle Registration',
+
+              // Registration only for non-shop owners
+              if (!_isShopOwner) ...[
+                _DocumentUploadTile(
+                  title: 'Upload Vehicle Registration *',
+                  subtitle: 'Required for vehicle-based rescuers',
+                  icon: Icons.description_outlined,
+                  isUploaded: _uploadedFiles.containsKey('registration'),
+                  fileName: _uploadedFiles['registration'],
+                  onTap: () =>
+                      _pickDocument('registration', 'Vehicle Registration'),
                 ),
-              ),
+              ] else ...[
+                _DocumentUploadTile(
+                  title: 'Upload Shop License (Optional)',
+                  subtitle: 'Business registration or license',
+                  icon: Icons.store_outlined,
+                  isUploaded: _uploadedFiles.containsKey('registration'),
+                  fileName: _uploadedFiles['registration'],
+                  onTap: () => _pickDocument('registration', 'Shop License'),
+                ),
+              ],
 
               // ─── Submit Button ────────────────────────────────────────
               const SizedBox(height: 48),
@@ -341,14 +444,15 @@ class _ProfileSetupScreenState extends State<ProfileSetupScreen> {
                 style: ElevatedButton.styleFrom(
                   minimumSize: const Size.fromHeight(56),
                   backgroundColor: AppColors.primary,
-                  foregroundColor: AppColors.secondary,
                 ),
                 child: _isLoading
-                    ? const CircularProgressIndicator(color: AppColors.secondary)
+                    ? const CircularProgressIndicator(color: Colors.white)
                     : const Text(
                         'Submit for Approval',
                         style: TextStyle(
-                            fontSize: 18, fontWeight: FontWeight.bold),
+                            fontSize: 18,
+                            fontWeight: FontWeight.bold,
+                            color: Colors.white),
                       ),
               ),
               const SizedBox(height: 24),
@@ -399,6 +503,7 @@ class _ServiceChip extends StatelessWidget {
 
 class _DocumentUploadTile extends StatelessWidget {
   final String title;
+  final String subtitle;
   final IconData icon;
   final bool isUploaded;
   final String? fileName;
@@ -406,6 +511,7 @@ class _DocumentUploadTile extends StatelessWidget {
 
   const _DocumentUploadTile({
     required this.title,
+    required this.subtitle,
     required this.icon,
     required this.isUploaded,
     this.fileName,
@@ -414,13 +520,6 @@ class _DocumentUploadTile extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    String displayText = title;
-    if (isUploaded && fileName != null) {
-      final name = fileName!.split('/').last;
-      displayText =
-          '$title (${name.length > 20 ? '${name.substring(0, 20)}...' : name})';
-    }
-
     return InkWell(
       onTap: onTap,
       borderRadius: BorderRadius.circular(12),
@@ -440,19 +539,33 @@ class _DocumentUploadTile extends StatelessWidget {
                 color: isUploaded ? AppColors.primary : AppColors.secondary),
             const SizedBox(width: 16),
             Expanded(
-              child: Text(
-                displayText,
-                style: TextStyle(
-                  color: isUploaded ? AppColors.primary : AppColors.textPrimary,
-                  fontWeight: isUploaded ? FontWeight.bold : FontWeight.normal,
-                  fontSize: 14,
-                ),
-                overflow: TextOverflow.ellipsis,
+              child: Column(
+                crossAxisAlignment: CrossAxisAlignment.start,
+                children: [
+                  Text(
+                    isUploaded ? '✅ $title' : title,
+                    style: TextStyle(
+                      color: isUploaded
+                          ? AppColors.primary
+                          : AppColors.textPrimary,
+                      fontWeight:
+                          isUploaded ? FontWeight.bold : FontWeight.normal,
+                      fontSize: 14,
+                    ),
+                  ),
+                  Text(
+                    isUploaded ? 'Uploaded successfully' : subtitle,
+                    style: TextStyle(
+                      fontSize: 11,
+                      color: isUploaded ? Colors.green : Colors.grey,
+                    ),
+                  ),
+                ],
               ),
             ),
             Icon(
               isUploaded ? Icons.check_circle : Icons.file_upload_outlined,
-              color: AppColors.primary,
+              color: isUploaded ? Colors.green : AppColors.primary,
             ),
           ],
         ),

@@ -1,7 +1,6 @@
 import 'package:flutter/material.dart';
 import '../../core/theme/app_theme.dart';
 import '../../services/api_service.dart';
-import '../../services/request_service.dart';
 
 class CustomerNotificationScreen extends StatefulWidget {
   const CustomerNotificationScreen({super.key});
@@ -13,7 +12,7 @@ class CustomerNotificationScreen extends StatefulWidget {
 
 class _CustomerNotificationScreenState
     extends State<CustomerNotificationScreen> {
-  List<Map<String, dynamic>> _notifications = [];
+  List<dynamic> _notifications = [];
   bool _isLoading = true;
 
   @override
@@ -24,118 +23,64 @@ class _CustomerNotificationScreenState
 
   Future<void> _loadNotifications() async {
     setState(() => _isLoading = true);
-    try {
-      final activeRes = await RequestService.getActiveRequest();
-      final historyRes = await RequestService.getMyRequests();
 
-      List<Map<String, dynamic>> requestsList = [];
-      if (activeRes['success'] == true && activeRes['request'] != null) {
-        requestsList.add(activeRes['request']);
-      }
-      if (historyRes['success'] == true && historyRes['requests'] != null) {
-        final history = List<Map<String, dynamic>>.from(historyRes['requests']);
-        for (var r in history) {
-          if (!requestsList.any((existing) => existing['_id'] == r['_id'])) {
-            requestsList.add(r);
-          }
-        }
-      }
+    final response = await ApiService.authGet('/notifications');
 
-      List<Map<String, dynamic>> notificationsList = [];
+    setState(() => _isLoading = false);
 
-      // Add Welcome notification using user registration date
-      final user = await ApiService.getSavedUser();
-      DateTime? welcomeTime;
-      if (user != null && user['createdAt'] != null) {
-        welcomeTime = DateTime.parse(user['createdAt']).toLocal();
-      }
-
-      for (var request in requestsList) {
-        final status = request['status'] ?? 'pending';
-        final problemType = request['problemType'] ?? 'Service Request';
-        final rescuerName = request['rescuer'] != null
-            ? (request['rescuer']['name'] ?? 'Rescuer')
-            : 'Rescuer';
-        final updatedAtStr = request['updatedAt'] ?? request['createdAt'];
-        final time = updatedAtStr != null
-            ? DateTime.parse(updatedAtStr).toLocal()
-            : DateTime.now();
-
-        if (status == 'completed') {
-          notificationsList.add({
-            'title': 'Service Completed',
-            'body':
-                'Your rescue request for $problemType has been completed successfully.',
-            'dateTime': time,
-            'icon': Icons.check_circle,
-            'color': Colors.green,
-          });
-        } else if (status == 'accepted') {
-          notificationsList.add({
-            'title': 'Rescuer Assigned',
-            'body':
-                '$rescuerName is on his way to help you with your ${problemType.toLowerCase()}.',
-            'dateTime': time,
-            'icon': Icons.person,
-            'color': AppColors.primary,
-          });
-        } else if (status == 'cancelled') {
-          notificationsList.add({
-            'title': 'Request Cancelled',
-            'body': 'Your rescue request for $problemType was cancelled.',
-            'dateTime': time,
-            'icon': Icons.cancel,
-            'color': Colors.red,
-          });
-        } else if (status == 'pending') {
-          notificationsList.add({
-            'title': 'Searching for Rescuers',
-            'body':
-                'We are looking for nearby rescuers for your $problemType request.',
-            'dateTime': time,
-            'icon': Icons.search,
-            'color': AppColors.accent,
-          });
-        }
-      }
-
-      // Add welcome notification
-      notificationsList.add({
-        'title': 'Welcome to Rescue Ride',
-        'body':
-            'Thank you for choosing Rescue Ride for your vehicle assistance needs.',
-        'dateTime':
-            welcomeTime ?? DateTime.now().subtract(const Duration(days: 2)),
-        'icon': Icons.celebration,
-        'color': AppColors.accent,
-      });
-
-      // Sort by dateTime descending
-      notificationsList
-          .sort((a, b) => (b['dateTime'] as DateTime).compareTo(a['dateTime'] as DateTime));
-
-      setState(() {
-        _notifications = notificationsList;
-        _isLoading = false;
-      });
-    } catch (e) {
-      setState(() => _isLoading = false);
+    if (response['success'] == true) {
+      setState(() => _notifications = response['notifications'] ?? []);
+      // Mark as read
+      await ApiService.authPatch('/notifications/mark-read', {});
     }
   }
 
-  String _formatElapsedTime(DateTime dateTime) {
-    final difference = DateTime.now().difference(dateTime);
-    if (difference.inSeconds < 60) {
-      return 'Just now';
-    } else if (difference.inMinutes < 60) {
-      return '${difference.inMinutes} minute(s) ago';
-    } else if (difference.inHours < 24) {
-      return '${difference.inHours} hour(s) ago';
-    } else if (difference.inDays < 7) {
-      return '${difference.inDays} day(s) ago';
-    } else {
-      return '${dateTime.day}/${dateTime.month}/${dateTime.year}';
+  IconData _iconForType(String type) {
+    switch (type) {
+      case 'new_offer':
+        return Icons.local_offer;
+      case 'offer_accepted':
+        return Icons.check_circle;
+      case 'new_request':
+        return Icons.notifications_active;
+      case 'job_completed':
+        return Icons.task_alt;
+      case 'account_approved':
+        return Icons.verified;
+      case 'account_rejected':
+        return Icons.cancel;
+      default:
+        return Icons.notifications;
     }
+  }
+
+  Color _colorForType(String type) {
+    switch (type) {
+      case 'new_offer':
+        return AppColors.primary;
+      case 'offer_accepted':
+        return Colors.green;
+      case 'new_request':
+        return Colors.orange;
+      case 'job_completed':
+        return Colors.green;
+      case 'account_approved':
+        return Colors.green;
+      case 'account_rejected':
+        return Colors.red;
+      default:
+        return Colors.blueGrey;
+    }
+  }
+
+  String _formatElapsedTime(String dateTimeStr) {
+    final dateTime = DateTime.parse(dateTimeStr).toLocal();
+    final difference = DateTime.now().difference(dateTime);
+    if (difference.inSeconds < 60) return 'Just now';
+    if (difference.inMinutes < 60) return '${difference.inMinutes}m ago';
+    if (difference.inHours < 24) return '${difference.inHours}h ago';
+    if (difference.inDays < 7) return '${difference.inDays}d ago';
+    return '${dateTime.day}/${dateTime.month}/${dateTime.year}';
   }
 
   @override
@@ -152,45 +97,69 @@ class _CustomerNotificationScreenState
       ),
       body: _isLoading
           ? const Center(child: CircularProgressIndicator())
-          : RefreshIndicator(
-              onRefresh: _loadNotifications,
-              child: ListView.separated(
-                padding: const EdgeInsets.all(16),
-                itemCount: _notifications.length,
-                separatorBuilder: (context, index) => const Divider(),
-                itemBuilder: (context, index) {
-                  final notification = _notifications[index];
-                  final color = notification['color'] as Color;
-
-                  return ListTile(
-                    leading: CircleAvatar(
-                      backgroundColor: color.withValues(alpha: 0.1),
-                      child: Icon(
-                        notification['icon'] as IconData,
-                        color: color,
+          : _notifications.isEmpty
+              ? Center(
+                  child: Column(
+                    mainAxisAlignment: MainAxisAlignment.center,
+                    children: [
+                      Icon(Icons.notifications_off,
+                          size: 80, color: Colors.grey[300]),
+                      const SizedBox(height: 16),
+                      const Text(
+                        'No notifications yet',
+                        style: TextStyle(fontSize: 18, color: Colors.grey),
                       ),
-                    ),
-                    title: Text(
-                      notification['title'] as String,
-                      style: const TextStyle(fontWeight: FontWeight.bold),
-                    ),
-                    subtitle: Column(
-                      crossAxisAlignment: CrossAxisAlignment.start,
-                      children: [
-                        const SizedBox(height: 4),
-                        Text(notification['body'] as String),
-                        const SizedBox(height: 4),
-                        Text(
-                          _formatElapsedTime(notification['dateTime'] as DateTime),
-                          style:
-                              const TextStyle(fontSize: 12, color: Colors.grey),
+                      const SizedBox(height: 8),
+                      const Text(
+                        'You\'ll see updates about your\nrequests here',
+                        textAlign: TextAlign.center,
+                        style: TextStyle(color: Colors.grey),
+                      ),
+                    ],
+                  ),
+                )
+              : RefreshIndicator(
+                  onRefresh: _loadNotifications,
+                  child: ListView.separated(
+                    padding: const EdgeInsets.all(16),
+                    itemCount: _notifications.length,
+                    separatorBuilder: (context, index) => const Divider(),
+                    itemBuilder: (context, index) {
+                      final n = _notifications[index];
+                      final type = n['type'] ?? 'default';
+                      final color = _colorForType(type);
+                      final isRead = n['isRead'] ?? false;
+
+                      return ListTile(
+                        tileColor:
+                            isRead ? null : AppColors.primary.withOpacity(0.04),
+                        leading: CircleAvatar(
+                          backgroundColor: color.withOpacity(0.1),
+                          child: Icon(_iconForType(type), color: color),
                         ),
-                      ],
-                    ),
-                  );
-                },
-              ),
-            ),
+                        title: Text(
+                          n['title'] ?? '',
+                          style: const TextStyle(fontWeight: FontWeight.bold),
+                        ),
+                        subtitle: Column(
+                          crossAxisAlignment: CrossAxisAlignment.start,
+                          children: [
+                            const SizedBox(height: 4),
+                            Text(n['body'] ?? ''),
+                            const SizedBox(height: 4),
+                            Text(
+                              n['createdAt'] != null
+                                  ? _formatElapsedTime(n['createdAt'])
+                                  : '',
+                              style: const TextStyle(
+                                  fontSize: 12, color: Colors.grey),
+                            ),
+                          ],
+                        ),
+                      );
+                    },
+                  ),
+                ),
     );
   }
 }

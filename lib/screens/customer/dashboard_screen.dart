@@ -5,6 +5,7 @@ import 'package:geolocator/geolocator.dart';
 import '../../core/theme/app_theme.dart';
 import '../../services/location_service.dart';
 import '../../services/ai_api_service.dart';
+import '../../services/request_service.dart';
 import 'dart:async';
 
 class CustomerDashboardScreen extends StatefulWidget {
@@ -28,12 +29,53 @@ class _CustomerDashboardScreenState extends State<CustomerDashboardScreen>
   Set<Marker> _hotspotMarkers = {};
   Marker? _searchMarker;
 
+  // ─── Active Request Tracking ─────────────────────────────────────────────
+  Map<String, dynamic>? _activeRequest;
+  bool _checkingActiveRequest = true;
+
   @override
   void initState() {
     super.initState();
     WidgetsBinding.instance.addObserver(this);
     _initLiveLocation();
     _loadHotspots();
+    _checkActiveRequest();
+  }
+
+  // ─── Check if customer has an active/ongoing request ─────────────────────
+  Future<void> _checkActiveRequest() async {
+    setState(() => _checkingActiveRequest = true);
+    final response = await RequestService.getActiveRequest();
+    if (mounted) {
+      setState(() {
+        _activeRequest =
+            response['success'] == true ? response['request'] : null;
+        _checkingActiveRequest = false;
+      });
+    }
+  }
+
+  void _resumeActiveRequest() {
+    if (_activeRequest == null) return;
+
+    final status = _activeRequest!['status'];
+    final requestId = _activeRequest!['_id'];
+
+    if (status == 'searching' || status == 'negotiating') {
+      // Go back to offers screen
+      context.push('/offers', extra: {
+        'requestId': requestId,
+        'offeredFare': _activeRequest!['offeredFare'],
+        'problemType': _activeRequest!['problemType'],
+      });
+    } else if (status == 'accepted' || status == 'in_progress') {
+      // Go back to tracking screen
+      context.push('/tracking', extra: {
+        'requestId': requestId,
+        'finalFare':
+            _activeRequest!['finalFare'] ?? _activeRequest!['offeredFare'],
+      }).then((_) => _checkActiveRequest());
+    }
   }
 
   void _updateAllMarkers() {
@@ -42,8 +84,10 @@ class _CustomerDashboardScreenState extends State<CustomerDashboardScreen>
       all.add(
         Marker(
           markerId: const MarkerId('current_location'),
-          position: LatLng(_currentPosition!.latitude, _currentPosition!.longitude),
-          icon: BitmapDescriptor.defaultMarkerWithHue(BitmapDescriptor.hueAzure),
+          position:
+              LatLng(_currentPosition!.latitude, _currentPosition!.longitude),
+          icon:
+              BitmapDescriptor.defaultMarkerWithHue(BitmapDescriptor.hueAzure),
           infoWindow: const InfoWindow(title: 'Your Location'),
           flat: true,
           anchor: const Offset(0.5, 0.5),
@@ -69,7 +113,7 @@ class _CustomerDashboardScreenState extends State<CustomerDashboardScreen>
       final lat = (hotspot['latitude'] as num).toDouble();
       final lng = (hotspot['longitude'] as num).toDouble();
       final risk = hotspot['riskLevel'] ?? 'Low';
-      
+
       double markerColor;
       if (risk == 'High') {
         markerColor = BitmapDescriptor.hueRed;
@@ -101,6 +145,7 @@ class _CustomerDashboardScreenState extends State<CustomerDashboardScreen>
       _stopTracking();
     } else if (state == AppLifecycleState.resumed) {
       _initLiveLocation();
+      _checkActiveRequest();
     }
   }
 
@@ -109,9 +154,8 @@ class _CustomerDashboardScreenState extends State<CustomerDashboardScreen>
     _positionSubscription = null;
   }
 
-  /// Initialize live location tracking
   Future<void> _initLiveLocation() async {
-    if (_positionSubscription != null) return; // Already tracking
+    if (_positionSubscription != null) return;
 
     try {
       bool serviceEnabled = await _locationService.isLocationServiceEnabled();
@@ -132,13 +176,11 @@ class _CustomerDashboardScreenState extends State<CustomerDashboardScreen>
         return;
       }
 
-      // Get initial position
       Position? position = await _locationService.getCurrentLocation();
       if (position != null) {
         _updateUIWithPosition(position);
       }
 
-      // Start live updates (Every 3-5 seconds, High Accuracy)
       _positionSubscription = _locationService.getLocationStream().listen(
         (Position position) {
           if (mounted) {
@@ -168,21 +210,18 @@ class _CustomerDashboardScreenState extends State<CustomerDashboardScreen>
       });
       _updateAllMarkers();
 
-      // Move camera smoothly if following user
       if (_isFollowingUser) {
         _mapController?.animateCamera(
           CameraUpdate.newCameraPosition(
             CameraPosition(
               target: LatLng(position.latitude, position.longitude),
-              zoom: 17.0, // High zoom for ride-sharing feel
-              tilt: 45.0, // Slight tilt for better perspective
+              zoom: 17.0,
+              tilt: 45.0,
             ),
           ),
         );
       }
 
-      // Reverse geocode occasionally (don't do it on every tiny move to save API calls/battery)
-      // For now we do it to keep UI updated
       _updateAddressText(position);
     }
   }
@@ -199,7 +238,6 @@ class _CustomerDashboardScreenState extends State<CustomerDashboardScreen>
     }
   }
 
-  /// Search location and show results
   Future<void> _searchLocation(String query) async {
     if (query.isEmpty) return;
 
@@ -261,7 +299,7 @@ class _CustomerDashboardScreenState extends State<CustomerDashboardScreen>
   }
 
   void _onBottomNavTap(int index) {
-    if (index == 0) return; // Already on Home
+    if (index == 0) return;
 
     if (index == 1) {
       context.push('/customer-history');
@@ -286,7 +324,9 @@ class _CustomerDashboardScreenState extends State<CustomerDashboardScreen>
         actions: [
           IconButton(
             icon: const Icon(Icons.notifications_none),
-            onPressed: () => context.push('/customer-notifications'),
+            onPressed: () => context
+                .push('/customer-notifications')
+                .then((_) => _checkActiveRequest()),
           ),
           IconButton(
             icon: const Icon(Icons.person_outline),
@@ -351,6 +391,79 @@ class _CustomerDashboardScreenState extends State<CustomerDashboardScreen>
                         ),
                       ),
                     ),
+
+          // ─── Active Request Banner ─────────────────────────────────────
+          if (_activeRequest != null)
+            Positioned(
+              top: 90,
+              left: 20,
+              right: 20,
+              child: InkWell(
+                onTap: _resumeActiveRequest,
+                borderRadius: BorderRadius.circular(16),
+                child: Container(
+                  padding: const EdgeInsets.all(16),
+                  decoration: BoxDecoration(
+                    color: AppColors.primary,
+                    borderRadius: BorderRadius.circular(16),
+                    boxShadow: const [
+                      BoxShadow(
+                        color: Colors.black26,
+                        blurRadius: 10,
+                        offset: Offset(0, 4),
+                      ),
+                    ],
+                  ),
+                  child: Row(
+                    children: [
+                      Container(
+                        padding: const EdgeInsets.all(10),
+                        decoration: BoxDecoration(
+                          color: Colors.white.withOpacity(0.2),
+                          shape: BoxShape.circle,
+                        ),
+                        child: Icon(
+                          _activeRequest!['status'] == 'searching' ||
+                                  _activeRequest!['status'] == 'negotiating'
+                              ? Icons.search
+                              : Icons.directions_car,
+                          color: Colors.white,
+                        ),
+                      ),
+                      const SizedBox(width: 12),
+                      Expanded(
+                        child: Column(
+                          crossAxisAlignment: CrossAxisAlignment.start,
+                          children: [
+                            Text(
+                              _activeRequest!['status'] == 'searching' ||
+                                      _activeRequest!['status'] == 'negotiating'
+                                  ? 'Searching for rescuers...'
+                                  : 'Rescuer is on the way!',
+                              style: const TextStyle(
+                                color: Colors.white,
+                                fontWeight: FontWeight.bold,
+                                fontSize: 15,
+                              ),
+                            ),
+                            Text(
+                              _activeRequest!['problemType'] ?? '',
+                              style: const TextStyle(
+                                color: Colors.white70,
+                                fontSize: 12,
+                              ),
+                            ),
+                          ],
+                        ),
+                      ),
+                      const Icon(Icons.arrow_forward_ios,
+                          color: Colors.white, size: 16),
+                    ],
+                  ),
+                ),
+              ),
+            ),
+
           // Problem Selection Cards
           Positioned(
             bottom: 0,
@@ -429,7 +542,7 @@ class _CustomerDashboardScreenState extends State<CustomerDashboardScreen>
           // My Location Button
           Positioned(
             right: 20,
-            top: 90,
+            top: _activeRequest != null ? 165 : 90,
             child: FloatingActionButton.small(
               backgroundColor: Colors.white,
               onPressed: () {

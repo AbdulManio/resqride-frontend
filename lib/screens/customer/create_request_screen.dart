@@ -34,6 +34,7 @@ class _CreateRequestScreenState extends State<CreateRequestScreen> {
     });
 
     final position = await _getCurrentLocation();
+    print('🔍 DEBUG Position: $position');
     if (position != null) {
       // Determine vehicle type based on problem type
       String vehicleType = 'Car';
@@ -128,6 +129,7 @@ class _CreateRequestScreenState extends State<CreateRequestScreen> {
     }
 
     // Create request on backend
+    print('🔍 DEBUG Creating request now...');
     final response = await RequestService.createRequest(
       problemType: widget.problemType,
       offeredFare: fare,
@@ -136,6 +138,7 @@ class _CreateRequestScreenState extends State<CreateRequestScreen> {
       description: _descriptionController.text,
       estimatedPrice: _predictedFare,
     );
+    print('🔍 DEBUG Response: $response');
 
     setState(() => _isLoading = false);
 
@@ -239,7 +242,8 @@ class _CreateRequestScreenState extends State<CreateRequestScreen> {
               _predictedFare != null
                   ? 'Rescuers nearby usually accept $_predictedFare - ${_predictedFare! + 300} PKR'
                   : 'Rescuers nearby usually accept 500 - 800 PKR',
-              style: const TextStyle(color: AppColors.textSecondary, fontSize: 12),
+              style:
+                  const TextStyle(color: AppColors.textSecondary, fontSize: 12),
             ),
             const SizedBox(height: 48),
             ElevatedButton(

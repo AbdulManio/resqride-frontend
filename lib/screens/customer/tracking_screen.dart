@@ -332,7 +332,7 @@ class _TrackingScreenState extends State<TrackingScreen> {
                     children: [
                       Row(
                         children: [
-                           CircleAvatar(
+                          CircleAvatar(
                             radius: 30,
                             backgroundColor: AppColors.primary,
                             backgroundImage: (_rescuerProfileUrl != null &&
@@ -389,17 +389,25 @@ class _TrackingScreenState extends State<TrackingScreen> {
                         ],
                       ),
                       const SizedBox(height: 16),
-                      ElevatedButton(
-                        onPressed: () {
-                          trackingProvider.stopUserTracking();
-                          trackingProvider.stopRescuerTracking();
-                          context.push('/rating');
-                        },
-                        style: ElevatedButton.styleFrom(
-                          minimumSize: const Size.fromHeight(48),
-                          backgroundColor: AppColors.primary,
+                      Container(
+                        padding: const EdgeInsets.all(16),
+                        decoration: BoxDecoration(
+                          color: Colors.amber.withOpacity(0.1),
+                          borderRadius: BorderRadius.circular(12),
                         ),
-                        child: const Text('Service Completed'),
+                        child: const Row(
+                          children: [
+                            Icon(Icons.info_outline, color: Colors.amber),
+                            SizedBox(width: 12),
+                            Expanded(
+                              child: Text(
+                                'Waiting for rescuer to confirm service completion',
+                                style: TextStyle(
+                                    fontSize: 13, color: Colors.black87),
+                              ),
+                            ),
+                          ],
+                        ),
                       ),
                     ],
                   ),
