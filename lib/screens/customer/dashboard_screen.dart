@@ -565,9 +565,7 @@ class _CustomerDashboardScreenState extends State<CustomerDashboardScreen>
             left: 20,
             right: 20,
             child: InkWell(
-              onTap: () {
-                _showSearchDialog();
-              },
+              onTap: null,
               child: Container(
                 padding:
                     const EdgeInsets.symmetric(horizontal: 16, vertical: 12),
