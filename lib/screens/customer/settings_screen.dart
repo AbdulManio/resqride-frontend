@@ -46,6 +46,12 @@ class CustomerSettingsScreen extends StatelessWidget {
             leading: const Icon(Icons.help, color: AppColors.primary),
             title: const Text('Help & Support'),
             trailing: const Icon(Icons.chevron_right),
+            onTap: () => context.push('/live-support'),
+          ),
+          ListTile(
+            leading: const Icon(Icons.quiz, color: AppColors.primary),
+            title: const Text('FAQs'),
+            trailing: const Icon(Icons.chevron_right),
             onTap: () => context.push('/help-support'),
           ),
           ListTile(
@@ -56,7 +62,8 @@ class CustomerSettingsScreen extends StatelessWidget {
               context: context,
               applicationName: 'ResQRide',
               applicationVersion: '1.0.0',
-              applicationIcon: const Icon(Icons.car_repair, color: AppColors.primary, size: 40),
+              applicationIcon: const Icon(Icons.car_repair,
+                  color: AppColors.primary, size: 40),
               children: [
                 const Text('AI-powered roadside assistance app for Pakistan.'),
               ],

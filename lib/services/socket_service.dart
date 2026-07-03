@@ -138,5 +138,10 @@ class SocketService {
     _socket = null;
   }
 
+  static void onSupportReply(Function(Map<String, dynamic>) callback) {
+    _socket?.on(
+        'support:reply', (data) => callback(Map<String, dynamic>.from(data)));
+  }
+
   static bool get isConnected => _socket?.connected ?? false;
 }

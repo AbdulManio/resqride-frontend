@@ -1,10 +1,11 @@
-import 'dart:math';
 import 'package:flutter/material.dart';
 import 'package:go_router/go_router.dart';
 import 'package:geolocator/geolocator.dart';
+import 'package:google_maps_flutter/google_maps_flutter.dart';
 import '../../core/theme/app_theme.dart';
 import '../../services/request_service.dart';
 import '../../services/ai_api_service.dart';
+import '../../services/location_service.dart';
 
 class CreateRequestScreen extends StatefulWidget {
   final String problemType;
@@ -17,75 +18,165 @@ class CreateRequestScreen extends StatefulWidget {
 class _CreateRequestScreenState extends State<CreateRequestScreen> {
   final TextEditingController _fareController = TextEditingController();
   final TextEditingController _descriptionController = TextEditingController();
+  final TextEditingController _searchController = TextEditingController();
+  final LocationService _locationService = LocationService();
+
   bool _isLoading = false;
+  bool _isLoadingLocation = true;
+  bool _isLoadingPrice = false;
   int? _predictedFare;
-  bool _isPredictingPrice = false;
+
+  // Location
+  Position? _gpsPosition;
+  LatLng? _selectedLocation;
+  String _locationText = 'Getting your location...';
+  bool _useSearchedLocation = false;
 
   @override
   void initState() {
     super.initState();
-    _estimatePrice();
+    _getCurrentLocation();
   }
 
-  Future<void> _estimatePrice() async {
-    if (!mounted) return;
-    setState(() {
-      _isPredictingPrice = true;
-    });
-
-    final position = await _getCurrentLocation();
-    print('🔍 DEBUG Position: $position');
-    if (position != null) {
-      // Determine vehicle type based on problem type
-      String vehicleType = 'Car';
-      if (widget.problemType.toLowerCase().contains('bike')) {
-        vehicleType = 'Bike';
-      } else if (widget.problemType.toLowerCase().contains('suv')) {
-        vehicleType = 'SUV';
+  Future<void> _getCurrentLocation() async {
+    setState(() => _isLoadingLocation = true);
+    try {
+      final position = await _locationService.getCurrentLocation();
+      if (position != null && mounted) {
+        setState(() {
+          _gpsPosition = position;
+          _selectedLocation = LatLng(position.latitude, position.longitude);
+          _isLoadingLocation = false;
+          _useSearchedLocation = false;
+        });
+        _updateAddress(position.latitude, position.longitude);
+        _getPredictedPrice(position.latitude, position.longitude);
       }
+    } catch (e) {
+      setState(() => _isLoadingLocation = false);
+    }
+  }
 
-      // Randomize distance between 3.0 and 8.0 km to ensure price variation
-      final randomDistance = 3.0 + Random().nextDouble() * 5.0;
+  Future<void> _updateAddress(double lat, double lng) async {
+    final address = await _locationService.getAddressFromLatLng(lat, lng);
+    if (mounted) setState(() => _locationText = address);
+  }
 
+  Future<void> _searchAndSetLocation(String query) async {
+    if (query.isEmpty) return;
+    setState(() => _isLoadingLocation = true);
+
+    try {
+      final location = await _locationService.getLocationFromAddress(query);
+      if (location != null && mounted) {
+        setState(() {
+          _selectedLocation = LatLng(location.latitude, location.longitude);
+          _locationText = query;
+          _useSearchedLocation = true;
+          _isLoadingLocation = false;
+        });
+        _getPredictedPrice(location.latitude, location.longitude);
+      } else {
+        if (mounted) {
+          setState(() => _isLoadingLocation = false);
+          ScaffoldMessenger.of(context).showSnackBar(
+            const SnackBar(content: Text('Location not found. Try again.')),
+          );
+        }
+      }
+    } catch (e) {
+      setState(() => _isLoadingLocation = false);
+    }
+  }
+
+  Future<void> _getPredictedPrice(double lat, double lng) async {
+    setState(() => _isLoadingPrice = true);
+    try {
       final price = await AiApiService.predictPrice(
         serviceType: widget.problemType,
-        vehicleType: vehicleType,
-        distance: randomDistance,
-        lat: position.latitude,
-        lng: position.longitude,
+        vehicleType: 'Car',
+        distance: 5.0,
+        lat: lat,
+        lng: lng,
       );
-
       if (price != null && mounted) {
         setState(() {
           _predictedFare = price;
           _fareController.text = price.toString();
+          _isLoadingPrice = false;
         });
       }
-    }
-
-    if (mounted) {
-      setState(() {
-        _isPredictingPrice = false;
-      });
+    } catch (e) {
+      setState(() => _isLoadingPrice = false);
     }
   }
 
-  Future<Position?> _getCurrentLocation() async {
-    try {
-      bool serviceEnabled = await Geolocator.isLocationServiceEnabled();
-      if (!serviceEnabled) return null;
-
-      LocationPermission permission = await Geolocator.checkPermission();
-      if (permission == LocationPermission.denied) {
-        permission = await Geolocator.requestPermission();
-        if (permission == LocationPermission.denied) return null;
-      }
-
-      return await Geolocator.getCurrentPosition();
-    } catch (e) {
-      print('❌ Location error: $e');
-      return null;
-    }
+  void _showLocationSearch() {
+    showModalBottomSheet(
+      context: context,
+      isScrollControlled: true,
+      backgroundColor: Colors.transparent,
+      builder: (context) => Padding(
+        padding: EdgeInsets.only(
+            bottom: MediaQuery.of(context).viewInsets.bottom),
+        child: Container(
+          padding: const EdgeInsets.all(24),
+          decoration: const BoxDecoration(
+            color: Colors.white,
+            borderRadius: BorderRadius.vertical(top: Radius.circular(24)),
+          ),
+          child: Column(
+            mainAxisSize: MainAxisSize.min,
+            children: [
+              const Text('Search Location',
+                  style: TextStyle(fontSize: 18, fontWeight: FontWeight.bold)),
+              const SizedBox(height: 16),
+              TextField(
+                controller: _searchController,
+                autofocus: true,
+                decoration: InputDecoration(
+                  hintText: 'Enter area, street or landmark...',
+                  prefixIcon:
+                      const Icon(Icons.search, color: AppColors.primary),
+                  border: OutlineInputBorder(
+                      borderRadius: BorderRadius.circular(12)),
+                ),
+                onSubmitted: (value) {
+                  Navigator.pop(context);
+                  _searchAndSetLocation(value);
+                },
+              ),
+              const SizedBox(height: 12),
+              Row(
+                children: [
+                  Expanded(
+                    child: OutlinedButton.icon(
+                      onPressed: () {
+                        Navigator.pop(context);
+                        _getCurrentLocation();
+                      },
+                      icon: const Icon(Icons.my_location),
+                      label: const Text('Use GPS'),
+                    ),
+                  ),
+                  const SizedBox(width: 12),
+                  Expanded(
+                    child: ElevatedButton(
+                      onPressed: () {
+                        Navigator.pop(context);
+                        _searchAndSetLocation(_searchController.text);
+                      },
+                      child: const Text('Search'),
+                    ),
+                  ),
+                ],
+              ),
+              const SizedBox(height: 8),
+            ],
+          ),
+        ),
+      ),
+    );
   }
 
   Future<void> _findRescuers() async {
@@ -97,8 +188,7 @@ class _CreateRequestScreenState extends State<CreateRequestScreen> {
         builder: (context) => AlertDialog(
           title: const Text('Price Too Low'),
           content: const Text(
-            'Please offer at least 500 PKR to find nearby rescuers.',
-          ),
+              'Please offer at least 500 PKR to find nearby rescuers.'),
           actions: [
             TextButton(
               onPressed: () => context.pop(),
@@ -110,31 +200,23 @@ class _CreateRequestScreenState extends State<CreateRequestScreen> {
       return;
     }
 
-    setState(() => _isLoading = true);
-
-    // Get current location
-    final position = await _getCurrentLocation();
-
-    if (position == null) {
-      setState(() => _isLoading = false);
-      if (mounted) {
-        ScaffoldMessenger.of(context).showSnackBar(
-          const SnackBar(
-            content: Text('Could not get your location. Please enable GPS.'),
-            backgroundColor: Colors.red,
-          ),
-        );
-      }
+    if (_selectedLocation == null) {
+      ScaffoldMessenger.of(context).showSnackBar(
+        const SnackBar(
+            content: Text('Please wait for location to load'),
+            backgroundColor: Colors.red),
+      );
       return;
     }
 
-    // Create request on backend
+    setState(() => _isLoading = true);
+
     print('🔍 DEBUG Creating request now...');
     final response = await RequestService.createRequest(
       problemType: widget.problemType,
       offeredFare: fare,
-      lat: position.latitude,
-      lng: position.longitude,
+      lat: _selectedLocation!.latitude,
+      lng: _selectedLocation!.longitude,
       description: _descriptionController.text,
       estimatedPrice: _predictedFare,
     );
@@ -146,20 +228,16 @@ class _CreateRequestScreenState extends State<CreateRequestScreen> {
 
     if (response['success'] == true) {
       final requestId = response['request']['_id'];
-
       ScaffoldMessenger.of(context).showSnackBar(
         const SnackBar(
           content: Text('Request created! Searching for rescuers...'),
           backgroundColor: Colors.green,
         ),
       );
-
-      // Go to offers screen with requestId
       context.push('/offers', extra: {
         'requestId': requestId,
         'offeredFare': fare,
         'problemType': widget.problemType,
-        'estimatedPrice': _predictedFare,
       });
     } else {
       ScaffoldMessenger.of(context).showSnackBar(
@@ -180,11 +258,107 @@ class _CreateRequestScreenState extends State<CreateRequestScreen> {
         child: Column(
           crossAxisAlignment: CrossAxisAlignment.start,
           children: [
-            Text(
-              'Selected Problem: ${widget.problemType}',
-              style: const TextStyle(fontSize: 18, fontWeight: FontWeight.bold),
+            // ─── Problem Type ─────────────────────────────────────────
+            Container(
+              padding: const EdgeInsets.all(16),
+              decoration: BoxDecoration(
+                color: AppColors.primary.withOpacity(0.1),
+                borderRadius: BorderRadius.circular(12),
+              ),
+              child: Row(
+                children: [
+                  const Icon(Icons.build, color: AppColors.primary),
+                  const SizedBox(width: 12),
+                  Expanded(
+                    child: Text(
+                      widget.problemType,
+                      style: const TextStyle(
+                          fontSize: 16, fontWeight: FontWeight.bold),
+                    ),
+                  ),
+                ],
+              ),
             ),
-            const SizedBox(height: 24),
+
+            const SizedBox(height: 20),
+
+            // ─── Location Section ─────────────────────────────────────
+            const Text('Your Location',
+                style:
+                    TextStyle(fontSize: 16, fontWeight: FontWeight.bold)),
+            const SizedBox(height: 8),
+            InkWell(
+              onTap: _showLocationSearch,
+              borderRadius: BorderRadius.circular(12),
+              child: Container(
+                padding: const EdgeInsets.all(16),
+                decoration: BoxDecoration(
+                  border: Border.all(
+                      color: _useSearchedLocation
+                          ? AppColors.primary
+                          : Colors.grey[300]!),
+                  borderRadius: BorderRadius.circular(12),
+                  color: _useSearchedLocation
+                      ? AppColors.primary.withOpacity(0.05)
+                      : Colors.white,
+                ),
+                child: Row(
+                  children: [
+                    Icon(
+                      _useSearchedLocation
+                          ? Icons.location_searching
+                          : Icons.my_location,
+                      color: AppColors.primary,
+                    ),
+                    const SizedBox(width: 12),
+                    Expanded(
+                      child: _isLoadingLocation
+                          ? const Row(
+                              children: [
+                                SizedBox(
+                                    width: 16,
+                                    height: 16,
+                                    child: CircularProgressIndicator(
+                                        strokeWidth: 2)),
+                                SizedBox(width: 8),
+                                Text('Getting location...'),
+                              ],
+                            )
+                          : Column(
+                              crossAxisAlignment: CrossAxisAlignment.start,
+                              children: [
+                                Text(
+                                  _useSearchedLocation
+                                      ? 'Searched Location'
+                                      : 'Current Location (GPS)',
+                                  style: const TextStyle(
+                                      fontSize: 11, color: Colors.grey),
+                                ),
+                                Text(
+                                  _locationText,
+                                  style: const TextStyle(
+                                      fontWeight: FontWeight.w500),
+                                  overflow: TextOverflow.ellipsis,
+                                ),
+                              ],
+                            ),
+                    ),
+                    const Icon(Icons.edit_location_alt,
+                        color: AppColors.primary, size: 20),
+                  ],
+                ),
+              ),
+            ),
+            if (_useSearchedLocation)
+              TextButton.icon(
+                onPressed: _getCurrentLocation,
+                icon: const Icon(Icons.my_location, size: 16),
+                label: const Text('Use my GPS location instead'),
+              ),
+
+            const SizedBox(height: 20),
+
+            // ─── Description ──────────────────────────────────────────
             const Text('Description (Optional)',
                 style: TextStyle(fontWeight: FontWeight.bold)),
             const SizedBox(height: 8),
@@ -195,57 +369,72 @@ class _CreateRequestScreenState extends State<CreateRequestScreen> {
                 hintText: 'Describe your issue briefly...',
               ),
             ),
-            const SizedBox(height: 24),
-            const Text('Offered Fare (PKR)',
-                style: TextStyle(fontWeight: FontWeight.bold)),
-            const SizedBox(height: 8),
-            if (_isPredictingPrice)
-              const Padding(
-                padding: EdgeInsets.symmetric(vertical: 4.0),
+
+            const SizedBox(height: 20),
+
+            // ─── AI Price Prediction ──────────────────────────────────
+            if (_isLoadingPrice)
+              const Center(
                 child: Row(
+                  mainAxisAlignment: MainAxisAlignment.center,
                   children: [
                     SizedBox(
-                      width: 14,
-                      height: 14,
-                      child: CircularProgressIndicator(strokeWidth: 2),
-                    ),
+                        width: 16,
+                        height: 16,
+                        child:
+                            CircularProgressIndicator(strokeWidth: 2)),
                     SizedBox(width: 8),
-                    Text('Predicting estimated price...',
-                        style: TextStyle(color: Colors.grey, fontSize: 12)),
+                    Text('AI predicting fair price...'),
                   ],
                 ),
-              )
-            else if (_predictedFare != null)
-              Padding(
-                padding: const EdgeInsets.symmetric(vertical: 4.0),
-                child: Text(
-                  'Estimated Cost: PKR $_predictedFare',
-                  style: const TextStyle(
-                    color: AppColors.primary,
-                    fontWeight: FontWeight.bold,
-                    fontSize: 14,
-                  ),
+              ),
+
+            if (_predictedFare != null && !_isLoadingPrice)
+              Container(
+                padding: const EdgeInsets.all(12),
+                decoration: BoxDecoration(
+                  color: Colors.green.withOpacity(0.1),
+                  borderRadius: BorderRadius.circular(12),
+                  border: Border.all(color: Colors.green.withOpacity(0.3)),
+                ),
+                child: Row(
+                  children: [
+                    const Icon(Icons.auto_awesome,
+                        color: Colors.green, size: 20),
+                    const SizedBox(width: 8),
+                    Text(
+                      'AI Suggested Price: PKR $_predictedFare',
+                      style: const TextStyle(
+                          color: Colors.green, fontWeight: FontWeight.bold),
+                    ),
+                  ],
                 ),
               ),
+
+            const SizedBox(height: 16),
+
+            const Text('Offered Fare (PKR)',
+                style: TextStyle(fontWeight: FontWeight.bold)),
             const SizedBox(height: 8),
             TextField(
               controller: _fareController,
               keyboardType: TextInputType.number,
-              style: const TextStyle(fontSize: 24, fontWeight: FontWeight.bold),
+              style: const TextStyle(
+                  fontSize: 24, fontWeight: FontWeight.bold),
               decoration: const InputDecoration(
                 hintText: '500',
                 prefixIcon: Icon(Icons.payments_outlined),
               ),
             ),
             const SizedBox(height: 8),
-            Text(
-              _predictedFare != null
-                  ? 'Rescuers nearby usually accept $_predictedFare - ${_predictedFare! + 300} PKR'
-                  : 'Rescuers nearby usually accept 500 - 800 PKR',
-              style:
-                  const TextStyle(color: AppColors.textSecondary, fontSize: 12),
+            const Text(
+              'Rescuers nearby usually accept 500 - 800 PKR',
+              style: TextStyle(
+                  color: AppColors.textSecondary, fontSize: 12),
             ),
+
             const SizedBox(height: 48),
+
             ElevatedButton(
               onPressed: _isLoading ? null : _findRescuers,
               style: ElevatedButton.styleFrom(
@@ -255,8 +444,9 @@ class _CreateRequestScreenState extends State<CreateRequestScreen> {
               child: _isLoading
                   ? const CircularProgressIndicator(color: Colors.white)
                   : const Text('Find Rescuers',
-                      style:
-                          TextStyle(fontSize: 18, fontWeight: FontWeight.bold)),
+                      style: TextStyle(
+                          fontSize: 18, fontWeight: FontWeight.bold,
+                          color: Colors.white)),
             ),
           ],
         ),

@@ -22,6 +22,7 @@ import '../screens/rescuer/navigation_map_screen.dart';
 import '../screens/rescuer/account_status_screen.dart';
 import '../screens/customer/privacy_security_screen.dart';
 import '../screens/customer/help_support_screen.dart';
+import '../screens/customer/live_support_screen.dart';
 
 class AppRouter {
   static final GoRouter router = GoRouter(
@@ -159,6 +160,10 @@ class AppRouter {
             finalFare: extra['finalFare'] ?? 0,
           );
         },
+      ),
+      GoRoute(
+        path: '/live-support',
+        builder: (context, state) => const LiveSupportScreen(),
       ),
       GoRoute(
         path: '/account-status',
