@@ -8,9 +8,9 @@ class ApiService {
   // For real device: http://192.168.x.x:5000/api  ← your WiFi IP
   // For Railway (production)
   // static const String baseUrl = 'https://adventurous-growth-production-bb4a.up.railway.app/api';
-  
+
   // For Emulator (local testing)
-  static const String baseUrl = 'http://10.0.2.2:5000/api';
+  static const String baseUrl = 'https://rescueride-backend.vercel.app/api';
   // ─── Save JWT token ──────────────────────────────────────────────────────
   static Future<void> saveToken(String token) async {
     final prefs = await SharedPreferences.getInstance();
@@ -61,11 +61,13 @@ class ApiService {
   static Future<Map<String, dynamic>> post(
       String endpoint, Map<String, dynamic> body) async {
     try {
-      final response = await http.post(
-        Uri.parse('$baseUrl$endpoint'),
-        headers: _headers,
-        body: jsonEncode(body),
-      ).timeout(const Duration(seconds: 10));
+      final response = await http
+          .post(
+            Uri.parse('$baseUrl$endpoint'),
+            headers: _headers,
+            body: jsonEncode(body),
+          )
+          .timeout(const Duration(seconds: 10));
       return jsonDecode(response.body);
     } catch (e) {
       return {'success': false, 'message': 'Network error: $e'};
