@@ -6,8 +6,7 @@ class ApiService {
   // ⚠️ Change this to your machine's IP when testing on a real phone
   // For emulator: http://10.0.2.2:5000/api
   // For real device: http://192.168.x.x:5000/api  ← your WiFi IP
-  static const String baseUrl =
-      'https://adventurous-growth-production-bb4a.up.railway.app/api';
+  static const String baseUrl = 'https://rescueride-backend.vercel.app/api';
   // ─── Save JWT token ──────────────────────────────────────────────────────
   static Future<void> saveToken(String token) async {
     final prefs = await SharedPreferences.getInstance();

@@ -3,8 +3,7 @@ import 'api_service.dart';
 
 class SocketService {
   static IO.Socket? _socket;
-  static const String _serverUrl =
-      'https://adventurous-growth-production-bb4a.up.railway.app';
+  static const String _serverUrl = 'https://rescueride-backend.vercel.app';
   // On real device use your WiFi IP: 'http://192.168.x.x:5000'
 
   // ─────────────────────────────────────────────────────────────────────────
