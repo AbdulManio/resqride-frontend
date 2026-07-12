@@ -16,16 +16,16 @@ class OTPScreen extends StatefulWidget {
 
 class _OTPScreenState extends State<OTPScreen> {
   final List<TextEditingController> _controllers =
-      List.generate(4, (_) => TextEditingController());
-  final List<FocusNode> _focusNodes = List.generate(4, (_) => FocusNode());
+      List.generate(6, (_) => TextEditingController());
+  final List<FocusNode> _focusNodes = List.generate(6, (_) => FocusNode());
   bool _isLoading = false;
 
   String get _otpCode => _controllers.map((c) => c.text).join();
 
   Future<void> _verifyOtp() async {
-    if (_otpCode.length < 4) {
+    if (_otpCode.length < 6) {
       ScaffoldMessenger.of(context).showSnackBar(
-        const SnackBar(content: Text('Please enter the 4-digit code')),
+        const SnackBar(content: Text('Please enter the 6-digit code')),
       );
       return;
     }
@@ -88,9 +88,16 @@ class _OTPScreenState extends State<OTPScreen> {
         }
       }
     } else {
+      String errorMessage = response['message'] ?? '';
+      if (errorMessage.toLowerCase().contains('expire')) {
+        // Keep the expired message from backend if it exists
+      } else {
+        errorMessage = 'Invalid OTP. Please try again.';
+      }
+
       ScaffoldMessenger.of(context).showSnackBar(
         SnackBar(
-          content: Text(response['message'] ?? 'Invalid OTP'),
+          content: Text(errorMessage),
           backgroundColor: AppColors.error,
         ),
       );
@@ -158,10 +165,10 @@ class _OTPScreenState extends State<OTPScreen> {
               Row(
                 mainAxisAlignment: MainAxisAlignment.spaceBetween,
                 children: List.generate(
-                  4,
+                  6,
                   (index) => Container(
-                    width: 70,
-                    height: 70,
+                    width: 48,
+                    height: 56,
                     decoration: BoxDecoration(
                       color: Colors.white,
                       borderRadius: BorderRadius.circular(12),
@@ -180,7 +187,7 @@ class _OTPScreenState extends State<OTPScreen> {
                       keyboardType: TextInputType.number,
                       maxLength: 1,
                       style: const TextStyle(
-                          fontSize: 24, fontWeight: FontWeight.bold),
+                          fontSize: 22, fontWeight: FontWeight.bold),
                       decoration: InputDecoration(
                         counterText: '',
                         border: OutlineInputBorder(
@@ -189,13 +196,13 @@ class _OTPScreenState extends State<OTPScreen> {
                         ),
                       ),
                       onChanged: (value) {
-                        if (value.isNotEmpty && index < 3) {
+                        if (value.isNotEmpty && index < 5) {
                           _focusNodes[index + 1].requestFocus();
                         } else if (value.isEmpty && index > 0) {
                           _focusNodes[index - 1].requestFocus();
                         }
-                        // Auto-verify when all 4 digits entered
-                        if (_otpCode.length == 4) {
+                        // Auto-verify when all 6 digits entered
+                        if (_otpCode.length == 6) {
                           _verifyOtp();
                         }
                       },

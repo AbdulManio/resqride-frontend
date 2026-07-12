@@ -77,13 +77,16 @@ class _LiveSupportScreenState extends State<LiveSupportScreen> {
     });
     _scrollToBottom();
 
-    final response = await ApiService.authPost('/support/send', {'message': text});
+    final response =
+        await ApiService.authPost('/support/send', {'message': text});
 
     setState(() => _isSending = false);
 
     if (response['success'] != true && mounted) {
       ScaffoldMessenger.of(context).showSnackBar(
-        const SnackBar(content: Text('Failed to send message'), backgroundColor: Colors.red),
+        const SnackBar(
+            content: Text('Failed to send message'),
+            backgroundColor: Colors.red),
       );
     }
   }

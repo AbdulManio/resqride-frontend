@@ -117,8 +117,8 @@ class _CreateRequestScreenState extends State<CreateRequestScreen> {
       isScrollControlled: true,
       backgroundColor: Colors.transparent,
       builder: (context) => Padding(
-        padding: EdgeInsets.only(
-            bottom: MediaQuery.of(context).viewInsets.bottom),
+        padding:
+            EdgeInsets.only(bottom: MediaQuery.of(context).viewInsets.bottom),
         child: Container(
           padding: const EdgeInsets.all(24),
           decoration: const BoxDecoration(
@@ -284,8 +284,7 @@ class _CreateRequestScreenState extends State<CreateRequestScreen> {
 
             // ─── Location Section ─────────────────────────────────────
             const Text('Your Location',
-                style:
-                    TextStyle(fontSize: 16, fontWeight: FontWeight.bold)),
+                style: TextStyle(fontSize: 16, fontWeight: FontWeight.bold)),
             const SizedBox(height: 8),
             InkWell(
               onTap: _showLocationSearch,
@@ -381,8 +380,7 @@ class _CreateRequestScreenState extends State<CreateRequestScreen> {
                     SizedBox(
                         width: 16,
                         height: 16,
-                        child:
-                            CircularProgressIndicator(strokeWidth: 2)),
+                        child: CircularProgressIndicator(strokeWidth: 2)),
                     SizedBox(width: 8),
                     Text('AI predicting fair price...'),
                   ],
@@ -419,8 +417,7 @@ class _CreateRequestScreenState extends State<CreateRequestScreen> {
             TextField(
               controller: _fareController,
               keyboardType: TextInputType.number,
-              style: const TextStyle(
-                  fontSize: 24, fontWeight: FontWeight.bold),
+              style: const TextStyle(fontSize: 24, fontWeight: FontWeight.bold),
               decoration: const InputDecoration(
                 hintText: '500',
                 prefixIcon: Icon(Icons.payments_outlined),
@@ -429,8 +426,7 @@ class _CreateRequestScreenState extends State<CreateRequestScreen> {
             const SizedBox(height: 8),
             const Text(
               'Rescuers nearby usually accept 500 - 800 PKR',
-              style: TextStyle(
-                  color: AppColors.textSecondary, fontSize: 12),
+              style: TextStyle(color: AppColors.textSecondary, fontSize: 12),
             ),
 
             const SizedBox(height: 48),
@@ -445,7 +441,8 @@ class _CreateRequestScreenState extends State<CreateRequestScreen> {
                   ? const CircularProgressIndicator(color: Colors.white)
                   : const Text('Find Rescuers',
                       style: TextStyle(
-                          fontSize: 18, fontWeight: FontWeight.bold,
+                          fontSize: 18,
+                          fontWeight: FontWeight.bold,
                           color: Colors.white)),
             ),
           ],

@@ -6,8 +6,11 @@ class ApiService {
   // ⚠️ Change this to your machine's IP when testing on a real phone
   // For emulator: http://10.0.2.2:5000/api
   // For real device: http://192.168.x.x:5000/api  ← your WiFi IP
-  static const String baseUrl =
-      'https://adventurous-growth-production-bb4a.up.railway.app/api';
+  // For Railway (production)
+  // static const String baseUrl = 'https://adventurous-growth-production-bb4a.up.railway.app/api';
+  
+  // For Emulator (local testing)
+  static const String baseUrl = 'http://10.0.2.2:5000/api';
   // ─── Save JWT token ──────────────────────────────────────────────────────
   static Future<void> saveToken(String token) async {
     final prefs = await SharedPreferences.getInstance();
@@ -62,7 +65,7 @@ class ApiService {
         Uri.parse('$baseUrl$endpoint'),
         headers: _headers,
         body: jsonEncode(body),
-      );
+      ).timeout(const Duration(seconds: 10));
       return jsonDecode(response.body);
     } catch (e) {
       return {'success': false, 'message': 'Network error: $e'};

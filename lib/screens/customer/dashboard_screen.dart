@@ -72,7 +72,8 @@ class _CustomerDashboardScreenState extends State<CustomerDashboardScreen>
       // Go back to tracking screen
       context.push('/tracking', extra: {
         'requestId': requestId,
-        'finalFare': _activeRequest!['finalFare'] ?? _activeRequest!['offeredFare'],
+        'finalFare':
+            _activeRequest!['finalFare'] ?? _activeRequest!['offeredFare'],
       }).then((_) => _checkActiveRequest());
     }
   }
@@ -83,8 +84,10 @@ class _CustomerDashboardScreenState extends State<CustomerDashboardScreen>
       all.add(
         Marker(
           markerId: const MarkerId('current_location'),
-          position: LatLng(_currentPosition!.latitude, _currentPosition!.longitude),
-          icon: BitmapDescriptor.defaultMarkerWithHue(BitmapDescriptor.hueAzure),
+          position:
+              LatLng(_currentPosition!.latitude, _currentPosition!.longitude),
+          icon:
+              BitmapDescriptor.defaultMarkerWithHue(BitmapDescriptor.hueAzure),
           infoWindow: const InfoWindow(title: 'Your Location'),
           flat: true,
           anchor: const Offset(0.5, 0.5),
