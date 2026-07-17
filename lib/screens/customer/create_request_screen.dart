@@ -401,7 +401,7 @@ class _CreateRequestScreenState extends State<CreateRequestScreen> {
                         color: Colors.green, size: 20),
                     const SizedBox(width: 8),
                     Text(
-                      'AI Suggested Price: PKR $_predictedFare',
+                      'Our Recommended Price: PKR $_predictedFare',
                       style: const TextStyle(
                           color: Colors.green, fontWeight: FontWeight.bold),
                     ),

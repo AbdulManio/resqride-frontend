@@ -56,27 +56,6 @@ class RoleSelectionScreen extends StatelessWidget {
                   'Professional Roadside Assistance',
                   style: TextStyle(fontSize: 16, color: Colors.white70),
                 ),
-                const SizedBox(height: 8),
-                // AI Badge
-                Container(
-                  padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 4),
-                  decoration: BoxDecoration(
-                    color: Colors.white.withOpacity(0.2),
-                    borderRadius: BorderRadius.circular(20),
-                    border: Border.all(color: Colors.white30),
-                  ),
-                  child: const Row(
-                    mainAxisSize: MainAxisSize.min,
-                    children: [
-                      Icon(Icons.auto_awesome, size: 14, color: Colors.white70),
-                      SizedBox(width: 4),
-                      Text(
-                        'AI-Powered Price Prediction',
-                        style: TextStyle(fontSize: 12, color: Colors.white70),
-                      ),
-                    ],
-                  ),
-                ),
                 const Spacer(),
                 _RoleCard(
                   title: 'I Need Help',
