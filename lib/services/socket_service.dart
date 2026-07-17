@@ -14,6 +14,7 @@ class SocketService {
     _socket = IO.io(_serverUrl, <String, dynamic>{
       'transports': ['websocket'],
       'autoConnect': false,
+      'reconnection': false,
     });
 
     _socket!.connect();
