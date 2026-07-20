@@ -162,6 +162,20 @@ class AppRouter {
         },
       ),
       GoRoute(
+        path: '/rescuer-navigation',
+        builder: (context, state) {
+          final extra = state.extra as Map<String, dynamic>? ?? {};
+          return NavigationMapScreen(
+            requestId: extra['requestId'] ?? '',
+            customerLat: (extra['customerLat'] ?? 0.0).toDouble(),
+            customerLng: (extra['customerLng'] ?? 0.0).toDouble(),
+            customerName: extra['customerName'] ?? 'Customer',
+            problemType: extra['problemType'] ?? '',
+            finalFare: extra['finalFare'] ?? 0,
+          );
+        },
+      ),
+      GoRoute(
         path: '/live-support',
         builder: (context, state) => const LiveSupportScreen(),
       ),

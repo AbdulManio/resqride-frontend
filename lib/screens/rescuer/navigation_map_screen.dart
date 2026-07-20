@@ -50,15 +50,36 @@ class _NavigationMapScreenState extends State<NavigationMapScreen> {
     if (success) {
       provider.startUserTracking(enableBackground: true);
 
-      // Set customer location as rescuer target
-      provider.updateRescuerLocation(
-          LatLng(widget.customerLat, widget.customerLng));
+      double targetLat = widget.customerLat;
+      double targetLng = widget.customerLng;
+
+      // Fallback: fetch active job coordinates if missing
+      if (targetLat == 0.0 || targetLng == 0.0) {
+        final res = await ApiService.authGet('/services/my-active-job');
+        if (res['success'] == true &&
+            res['requests'] != null &&
+            (res['requests'] as List).isNotEmpty) {
+          final job = res['requests'][0];
+          final coords = job['location']?['coordinates'];
+          if (coords != null && coords.length > 1) {
+            targetLat = (coords[1] as num).toDouble();
+            targetLng = (coords[0] as num).toDouble();
+          }
+        }
+      }
+
+      if (targetLat != 0.0 && targetLng != 0.0) {
+        provider.updateRescuerLocation(LatLng(targetLat, targetLng));
+      }
 
       setState(() => _isInitialized = true);
       _centerCameraToBothLocations();
     } else {
-      if (mounted && provider.errorMessage != null) {
-        _showErrorDialog('Error', provider.errorMessage!);
+      if (mounted) {
+        setState(() => _isInitialized = true);
+        if (provider.errorMessage != null) {
+          _showErrorDialog('Error', provider.errorMessage!);
+        }
       }
     }
   }
@@ -177,6 +198,11 @@ class _NavigationMapScreenState extends State<NavigationMapScreen> {
                     trackingProvider.errorMessage ??
                         'Initializing navigation...',
                     textAlign: TextAlign.center,
+                  ),
+                  const SizedBox(height: 16),
+                  ElevatedButton(
+                    onPressed: _initializeTracking,
+                    child: const Text('Retry Navigation'),
                   ),
                 ],
               ),

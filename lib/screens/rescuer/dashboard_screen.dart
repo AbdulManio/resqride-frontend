@@ -34,9 +34,21 @@ class _RescuerDashboardScreenState extends State<RescuerDashboardScreen> {
       if (jobs.isNotEmpty) {
         _pollTimer?.cancel();
         final job = jobs.first;
-        context.push('/rescuer-navigation', extra: {
-          'requestId': job['_id'],
-          'customer': job['customer'],
+        final coords = job['location']?['coordinates'];
+        final double customerLat = (coords != null && coords.length > 1)
+            ? (coords[1] as num).toDouble()
+            : 0.0;
+        final double customerLng = (coords != null && coords.length > 0)
+            ? (coords[0] as num).toDouble()
+            : 0.0;
+
+        context.push('/navigation-map', extra: {
+          'requestId': job['_id'] ?? '',
+          'customerLat': customerLat,
+          'customerLng': customerLng,
+          'customerName': job['customer']?['name'] ?? 'Customer',
+          'problemType': job['problemType'] ?? 'Roadside Assistance',
+          'finalFare': job['finalFare'] ?? job['offeredFare'] ?? 0,
         });
       }
     }
