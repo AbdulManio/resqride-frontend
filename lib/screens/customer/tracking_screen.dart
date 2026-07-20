@@ -6,6 +6,8 @@ import '../../core/theme/app_theme.dart';
 import '../../providers/tracking_provider.dart';
 import '../../services/socket_service.dart';
 import '../../services/request_service.dart';
+import 'package:url_launcher/url_launcher.dart';
+import 'dart:async';
 
 class TrackingScreen extends StatefulWidget {
   final String requestId;
@@ -23,8 +25,10 @@ class TrackingScreen extends StatefulWidget {
 
 class _TrackingScreenState extends State<TrackingScreen> {
   GoogleMapController? _mapController;
+  Timer? _pollTimer;
   bool _isInitialized = false;
   String _rescuerName = 'Rescuer';
+  String _rescuerPhone = '';
   String _rescuerVehicle = '';
   String? _rescuerProfileUrl;
 
@@ -35,6 +39,9 @@ class _TrackingScreenState extends State<TrackingScreen> {
       _initializeTracking();
       _listenToRescuerLocation();
       _listenForCompletion();
+      _loadRescuerInfo();
+      _loadActiveRequestDetails();
+      _startRescuerLocationPolling();
     });
   }
 
@@ -55,6 +62,19 @@ class _TrackingScreenState extends State<TrackingScreen> {
     }
   }
 
+  Future<void> _loadRescuerInfo() async {
+    final response = await RequestService.getActiveRequest();
+    if (response['success'] == true && mounted) {
+      final rescuer = response['request']?['rescuer'];
+      if (rescuer != null) {
+        setState(() {
+          _rescuerName = rescuer['name'] ?? 'Rescuer';
+          _rescuerPhone = rescuer['phone'] ?? '';
+        });
+      }
+    }
+  }
+
   Future<void> _loadActiveRequestDetails() async {
     final response = await RequestService.getActiveRequest();
     if (response['success'] == true && mounted) {
@@ -63,6 +83,7 @@ class _TrackingScreenState extends State<TrackingScreen> {
         final rescuer = request['rescuer'];
         setState(() {
           _rescuerName = rescuer['name'] ?? 'Rescuer';
+          _rescuerPhone = rescuer['phone'] ?? _rescuerPhone;
           _rescuerProfileUrl = rescuer['profilePicture'] ??
               rescuer['avatar'] ??
               rescuer['profileImage'] ??
@@ -113,6 +134,93 @@ class _TrackingScreenState extends State<TrackingScreen> {
         context.push('/rating');
       }
     });
+  }
+
+  void _startRescuerLocationPolling() {
+    _pollTimer?.cancel();
+    _pollTimer = Timer.periodic(const Duration(seconds: 4), (_) async {
+      final response = await RequestService.getActiveRequest();
+      if (mounted && response['success'] == true) {
+        final request = response['request'];
+        if (request == null || request['status'] == 'completed') {
+          _pollTimer?.cancel();
+          final provider =
+              Provider.of<TrackingProvider>(context, listen: false);
+          provider.stopUserTracking();
+          provider.stopRescuerTracking();
+          if (mounted) {
+            context.push('/rating');
+          }
+          return;
+        }
+
+        final rescuer = request['rescuer'];
+        if (rescuer != null) {
+          if (rescuer['phone'] != null &&
+              (rescuer['phone'] as String).isNotEmpty) {
+            setState(() {
+              _rescuerPhone = rescuer['phone'];
+            });
+          }
+          if (rescuer['location'] != null &&
+              rescuer['location']['coordinates'] != null) {
+            final coords = rescuer['location']['coordinates'];
+            final lat = (coords[1] as num).toDouble();
+            final lng = (coords[0] as num).toDouble();
+            final provider =
+                Provider.of<TrackingProvider>(context, listen: false);
+            provider.updateRescuerLocation(LatLng(lat, lng));
+          }
+        }
+      }
+    });
+  }
+
+  Future<void> _makePhoneCall() async {
+    if (_rescuerPhone.isEmpty) {
+      await _loadRescuerInfo();
+    }
+    if (_rescuerPhone.isEmpty) {
+      showDialog(
+        context: context,
+        builder: (context) => AlertDialog(
+          title: const Text('Contact Rescuer'),
+          content: const Text('Rescuer phone number is not available.'),
+          actions: [
+            TextButton(
+              onPressed: () => Navigator.pop(context),
+              child: const Text('OK'),
+            ),
+          ],
+        ),
+      );
+      return;
+    }
+
+    final Uri url = Uri.parse('tel:$_rescuerPhone');
+    try {
+      if (await canLaunchUrl(url)) {
+        await launchUrl(url);
+      } else {
+        await launchUrl(url, mode: LaunchMode.externalApplication);
+      }
+    } catch (e) {
+      if (mounted) {
+        showDialog(
+          context: context,
+          builder: (context) => AlertDialog(
+            title: const Text('Rescuer Contact'),
+            content: SelectableText('Phone number: $_rescuerPhone'),
+            actions: [
+              TextButton(
+                onPressed: () => Navigator.pop(context),
+                child: const Text('Close'),
+              ),
+            ],
+          ),
+        );
+      }
+    }
   }
 
   void _centerCameraToBothLocations() {
@@ -176,6 +284,7 @@ class _TrackingScreenState extends State<TrackingScreen> {
     _mapController?.dispose();
     SocketService.off('rescuer:location');
     SocketService.off('request:completed');
+    _pollTimer?.cancel();
     super.dispose();
   }
 
@@ -270,25 +379,30 @@ class _TrackingScreenState extends State<TrackingScreen> {
                           ],
                         ),
                         const SizedBox(height: 12),
-                        Row(
-                          mainAxisAlignment: MainAxisAlignment.spaceEvenly,
-                          children: [
-                            _InfoChip(
-                              icon: Icons.access_time,
-                              label: trackingProvider.formattedETA,
-                              color: Colors.orange,
-                            ),
-                            _InfoChip(
-                              icon: Icons.speed,
-                              label: trackingProvider.formattedSpeed,
-                              color: Colors.green,
-                            ),
-                            _InfoChip(
-                              icon: Icons.payments,
-                              label: 'PKR ${widget.finalFare}',
-                              color: Colors.blue,
-                            ),
-                          ],
+                        SingleChildScrollView(
+                          scrollDirection: Axis.horizontal,
+                          child: Row(
+                            mainAxisAlignment: MainAxisAlignment.spaceEvenly,
+                            children: [
+                              _InfoChip(
+                                icon: Icons.access_time,
+                                label: trackingProvider.formattedETA,
+                                color: Colors.orange,
+                              ),
+                              const SizedBox(width: 8),
+                              _InfoChip(
+                                icon: Icons.speed,
+                                label: trackingProvider.formattedSpeed,
+                                color: Colors.green,
+                              ),
+                              const SizedBox(width: 8),
+                              _InfoChip(
+                                icon: Icons.payments,
+                                label: 'PKR ${widget.finalFare}',
+                                color: Colors.blue,
+                              ),
+                            ],
+                          ),
                         ),
                       ],
                     ),
@@ -366,7 +480,7 @@ class _TrackingScreenState extends State<TrackingScreen> {
                             ),
                           ),
                           IconButton(
-                            onPressed: () {},
+                            onPressed: _makePhoneCall,
                             icon: const Icon(Icons.call,
                                 color: AppColors.primary, size: 30),
                           ),

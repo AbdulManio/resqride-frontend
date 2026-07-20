@@ -247,43 +247,23 @@ class TrackingProvider extends ChangeNotifier {
 
   /// Start simulating rescuer location (replace with real backend in production)
   /// In real app, this would listen to Firebase/WebSocket for rescuer's location
-  /// enableBackground: Set to true for continuous tracking when app is in background
+  /// Start tracking rescuer location
   void startRescuerTracking(
       {LatLng? initialLocation, bool enableBackground = false}) {
     if (_isTrackingRescuer) return;
 
     debugPrint(
-        '🚀 TrackingProvider: Starting rescuer location tracking... Background: $enableBackground');
+        '🚀 TrackingProvider: Starting rescuer location tracking...');
     _isTrackingRescuer = true;
 
-    // Set initial rescuer location
     if (initialLocation != null) {
       _rescuerLatLng = initialLocation;
-    } else if (_userLatLng != null) {
-      // Place rescuer 0.01 degrees away from user (approximately 1km)
-      _rescuerLatLng = LatLng(
-        _userLatLng!.latitude + 0.01,
-        _userLatLng!.longitude + 0.01,
-      );
-    }
-
-    // Initialize route tracking
-    if (_rescuerLatLng != null) {
-      _routePoints.add(_rescuerLatLng!);
     }
 
     _updateMarkers();
     _updatePolyline();
     _calculateRouteMetrics();
     notifyListeners();
-
-    // Simulate rescuer moving towards user every 3 seconds for more realistic tracking
-    _rescuerSimulationTimer =
-        Timer.periodic(const Duration(seconds: 3), (timer) {
-      if (_userLatLng != null && _rescuerLatLng != null) {
-        _simulateRescuerMovement();
-      }
-    });
   }
 
   /// Stop tracking rescuer
@@ -295,46 +275,15 @@ class TrackingProvider extends ChangeNotifier {
     notifyListeners();
   }
 
-  /// Simulate rescuer movement towards user with route tracking
-  /// Replace this with real backend data in production
-  /// Updates route history and recalculates metrics
-  void _simulateRescuerMovement() {
-    if (_rescuerLatLng == null || _userLatLng == null) return;
-
-    // Calculate step (5% of distance towards user for smoother movement)
-    double latStep = (_userLatLng!.latitude - _rescuerLatLng!.latitude) * 0.05;
-    double lngStep =
-        (_userLatLng!.longitude - _rescuerLatLng!.longitude) * 0.05;
-
-    // Update rescuer location
-    _rescuerLatLng = LatLng(
-      _rescuerLatLng!.latitude + latStep,
-      _rescuerLatLng!.longitude + lngStep,
-    );
-
-    // Add to route history
-    _routePoints.add(_rescuerLatLng!);
-
-    // Limit route history to last 50 points for performance
-    if (_routePoints.length > 50) {
-      _routePoints.removeAt(0);
-    }
-
+  /// Update rescuer location dynamically from backend/socket
+  void updateRescuerLocation(LatLng location) {
+    _rescuerSimulationTimer?.cancel();
+    _rescuerSimulationTimer = null;
+    _rescuerLatLng = location;
+    _routePoints.clear(); // Clear dummy history polylines
     _updateMarkers();
     _updatePolyline();
     _calculateRouteMetrics();
-    notifyListeners();
-
-    debugPrint(
-        '📍 TrackingProvider: Rescuer position simulated - ${_rescuerLatLng!.latitude.toStringAsFixed(6)}, ${_rescuerLatLng!.longitude.toStringAsFixed(6)}');
-    debugPrint(
-        '📊 Route Points: ${_routePoints.length}, Distance: ${_distanceInKm.toStringAsFixed(2)}km, ETA: ${_formatETA(_estimatedArrivalTimeSeconds)}');
-  }
-
-  /// Update rescuer location manually (for backend integration)
-  void updateRescuerLocation(LatLng location) {
-    _rescuerLatLng = location;
-    _updateMarkers();
     notifyListeners();
   }
 

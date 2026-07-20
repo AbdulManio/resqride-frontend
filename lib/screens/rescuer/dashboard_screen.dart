@@ -5,6 +5,7 @@ import '../../core/theme/app_theme.dart';
 import '../../services/request_service.dart';
 import '../../services/socket_service.dart';
 import '../../services/api_service.dart';
+import 'package:geolocator/geolocator.dart';
 
 class RescuerDashboardScreen extends StatefulWidget {
   const RescuerDashboardScreen({super.key});
@@ -23,6 +24,89 @@ class _RescuerDashboardScreenState extends State<RescuerDashboardScreen> {
   void initState() {
     super.initState();
     _listenForNewRequests();
+    _startPolling();
+  }
+
+  Future<void> _checkForAcceptedJob() async {
+    final response = await ApiService.authGet('/services/my-active-job');
+    if (response['success'] == true && mounted) {
+      final jobs = List<Map<String, dynamic>>.from(response['requests'] ?? []);
+      if (jobs.isNotEmpty) {
+        _pollTimer?.cancel();
+        final job = jobs.first;
+        context.push('/rescuer-navigation', extra: {
+          'requestId': job['_id'],
+          'customer': job['customer'],
+        });
+      }
+    }
+  }
+
+  void _startPolling() {
+    _pollTimer?.cancel();
+    _pollTimer = Timer.periodic(const Duration(seconds: 10), (_) async {
+      if (_isOnline && mounted) await _pollForRequests();
+      await _checkForAcceptedJob();
+    });
+    _pollForRequests();
+  }
+
+  void _startLocationUpdates() async {
+    await _sendCurrentLocation(); // Send immediately
+
+    // Then every 30 seconds
+    Timer.periodic(const Duration(seconds: 30), (_) async {
+      if (_isOnline && mounted) {
+        await _sendCurrentLocation();
+      }
+    });
+  }
+
+  Future<void> _sendCurrentLocation() async {
+    try {
+      Position position = await Geolocator.getCurrentPosition();
+      await RescuerService.updateLocation(
+        lat: position.latitude,
+        lng: position.longitude,
+      );
+      print('📍 Location updated: ${position.latitude}, ${position.longitude}');
+    } catch (e) {
+      print('❌ Location error: $e');
+    }
+  }
+
+  Future<void> _pollForRequests() async {
+    final response = await ApiService.authGet('/services/nearby-requests');
+
+    if (response['success'] == true && mounted) {
+      final newRequests =
+          List<Map<String, dynamic>>.from(response['requests'] ?? []);
+
+      final newIds = newRequests.map((r) => r['_id'].toString()).toList();
+
+      setState(() {
+        // Remove requests that are no longer available
+        _requests.removeWhere(
+          (r) => !newIds.contains(r['requestId']),
+        );
+
+        // Add new requests
+        for (var req in newRequests) {
+          final exists = _requests.any(
+            (r) => r['requestId'] == req['_id'],
+          );
+
+          if (!exists) {
+            _requests.insert(0, {
+              'requestId': req['_id'],
+              'problemType': req['problemType'],
+              'offeredFare': req['offeredFare'],
+              'address': req['location']?['address'] ?? 'Customer location',
+            });
+          }
+        }
+      });
+    }
   }
 
   @override
@@ -37,7 +121,8 @@ class _RescuerDashboardScreenState extends State<RescuerDashboardScreen> {
     SocketService.onNewRequest((data) {
       if (mounted && _isOnline) {
         setState(() {
-          final exists = _requests.any((r) => r['requestId'] == data['requestId']);
+          final exists =
+              _requests.any((r) => r['requestId'] == data['requestId']);
           if (!exists) {
             _requests.insert(0, data);
           }
@@ -45,7 +130,8 @@ class _RescuerDashboardScreenState extends State<RescuerDashboardScreen> {
 
         ScaffoldMessenger.of(context).showSnackBar(
           SnackBar(
-            content: Text('New request: ${data['problemType']} — PKR ${data['offeredFare']}'),
+            content: Text(
+                'New request: ${data['problemType']} — PKR ${data['offeredFare']}'),
             backgroundColor: Colors.green,
             duration: const Duration(seconds: 3),
           ),
@@ -56,7 +142,18 @@ class _RescuerDashboardScreenState extends State<RescuerDashboardScreen> {
 
   // Toggle online/offline
   Future<void> _toggleOnline(bool value) async {
-    setState(() => _isTogglingOnline = true);
+    setState(() {
+      _isOnline = value;
+      if (!value) {
+        _requests.clear();
+        _pollTimer?.cancel();
+      }
+      if (value) {
+        _startPolling();
+        _startLocationUpdates(); // ← add this
+      }
+    });
+    if (value) _startPolling();
 
     final response = await RescuerService.toggleOnline(value);
 
@@ -78,7 +175,8 @@ class _RescuerDashboardScreenState extends State<RescuerDashboardScreen> {
 
       ScaffoldMessenger.of(context).showSnackBar(
         SnackBar(
-          content: Text(value ? '🟢 You are now Online!' : '🔴 You are now Offline'),
+          content:
+              Text(value ? '🟢 You are now Online!' : '🔴 You are now Offline'),
           backgroundColor: value ? Colors.green : Colors.grey,
         ),
       );
@@ -138,6 +236,7 @@ class _RescuerDashboardScreenState extends State<RescuerDashboardScreen> {
                 setState(() =>
                     _requests.removeWhere((r) => r['requestId'] == requestId));
               },
+              onRefresh: _pollForRequests,
             )
           : const _OfflineView(),
       bottomNavigationBar: BottomNavigationBar(
@@ -149,8 +248,7 @@ class _RescuerDashboardScreenState extends State<RescuerDashboardScreen> {
               icon: Icon(Icons.dashboard), label: 'Requests'),
           BottomNavigationBarItem(
               icon: Icon(Icons.account_balance_wallet), label: 'Earnings'),
-          BottomNavigationBarItem(
-              icon: Icon(Icons.person), label: 'Profile'),
+          BottomNavigationBarItem(icon: Icon(Icons.person), label: 'Profile'),
         ],
       ),
     );
@@ -183,10 +281,12 @@ class _OfflineView extends StatelessWidget {
 class _RequestsListView extends StatelessWidget {
   final List<Map<String, dynamic>> requests;
   final Function(String) onDecline;
+  final Future<void> Function() onRefresh;
 
   const _RequestsListView({
     required this.requests,
     required this.onDecline,
+    required this.onRefresh,
   });
 
   @override
@@ -209,97 +309,108 @@ class _RequestsListView extends StatelessWidget {
       );
     }
 
-    return ListView.builder(
-      padding: const EdgeInsets.all(16),
-      itemCount: requests.length,
-      itemBuilder: (context, index) {
-        final request = requests[index];
-        return Card(
-          margin: const EdgeInsets.only(bottom: 16),
-          shape:
-              RoundedRectangleBorder(borderRadius: BorderRadius.circular(16)),
-          child: Padding(
-            padding: const EdgeInsets.all(16),
-            child: Column(
-              crossAxisAlignment: CrossAxisAlignment.start,
-              children: [
-                Row(
-                  mainAxisAlignment: MainAxisAlignment.spaceBetween,
-                  children: [
-                    Chip(
-                      label: Text(request['problemType'] ?? 'Request'),
-                      backgroundColor: AppColors.primary,
-                      labelStyle: const TextStyle(color: Colors.white),
-                    ),
-                    Column(
-                      crossAxisAlignment: CrossAxisAlignment.end,
-                      children: [
-                        Text(
-                          'PKR ${request['offeredFare'] ?? 0}',
-                          style: const TextStyle(
-                            fontWeight: FontWeight.bold,
-                            fontSize: 18,
+    return RefreshIndicator(
+      onRefresh: onRefresh,
+      child: ListView.builder(
+        padding: const EdgeInsets.all(16),
+        itemCount: requests.length,
+        itemBuilder: (context, index) {
+          final request = requests[index];
+
+          return Card(
+            margin: const EdgeInsets.only(bottom: 16),
+            shape: RoundedRectangleBorder(
+              borderRadius: BorderRadius.circular(16),
+            ),
+            child: Padding(
+              padding: const EdgeInsets.all(16),
+              child: Column(
+                crossAxisAlignment: CrossAxisAlignment.start,
+                children: [
+                  Row(
+                    mainAxisAlignment: MainAxisAlignment.spaceBetween,
+                    children: [
+                      Chip(
+                        label: Text(request['problemType'] ?? 'Request'),
+                        backgroundColor: AppColors.primary,
+                        labelStyle: const TextStyle(color: Colors.white),
+                      ),
+                      Column(
+                        crossAxisAlignment: CrossAxisAlignment.end,
+                        children: [
+                          Text(
+                            'PKR ${request['offeredFare'] ?? 0}',
+                            style: const TextStyle(
+                              fontWeight: FontWeight.bold,
+                              fontSize: 18,
+                            ),
                           ),
-                        ),
-                        if (request['estimatedPrice'] != null)
-                          Padding(
-                            padding: const EdgeInsets.only(top: 4.0),
-                            child: Text(
-                              'Est: PKR ${request['estimatedPrice']}',
-                              style: const TextStyle(
-                                color: AppColors.textSecondary,
-                                fontSize: 12,
+                          if (request['estimatedPrice'] != null)
+                            Padding(
+                              padding: const EdgeInsets.only(top: 4.0),
+                              child: Text(
+                                'Est: PKR ${request['estimatedPrice']}',
+                                style: const TextStyle(
+                                  color: AppColors.textSecondary,
+                                  fontSize: 12,
+                                ),
                               ),
                             ),
+                        ],
+                      ),
+                    ],
+                  ),
+                  const SizedBox(height: 12),
+                  Row(
+                    children: [
+                      const Icon(
+                        Icons.location_on,
+                        size: 16,
+                        color: AppColors.secondary,
+                      ),
+                      const SizedBox(width: 8),
+                      Text(request['address'] ?? 'Customer location'),
+                    ],
+                  ),
+                  const SizedBox(height: 16),
+                  Row(
+                    children: [
+                      Expanded(
+                        child: OutlinedButton(
+                          onPressed: () {
+                            onDecline(request['requestId'] ?? '');
+                            ScaffoldMessenger.of(context).showSnackBar(
+                              const SnackBar(
+                                content: Text('Request declined'),
+                                backgroundColor: AppColors.error,
+                              ),
+                            );
+                          },
+                          child: const Text('Decline'),
+                        ),
+                      ),
+                      const SizedBox(width: 12),
+                      Expanded(
+                        child: ElevatedButton(
+                          onPressed: () => context.push(
+                            '/fare-offer',
+                            extra: {
+                              'requestId': request['requestId'] ?? '',
+                              'offeredFare': request['offeredFare'] ?? 0,
+                              'problemType': request['problemType'] ?? '',
+                            },
                           ),
-                      ],
-                    ),
-                  ],
-                ),
-                const SizedBox(height: 12),
-                Row(
-                  children: [
-                    const Icon(Icons.location_on,
-                        size: 16, color: AppColors.secondary),
-                    const SizedBox(width: 8),
-                    Text(request['address'] ?? 'Customer location'),
-                  ],
-                ),
-                const SizedBox(height: 16),
-                Row(
-                  children: [
-                    Expanded(
-                      child: OutlinedButton(
-                        onPressed: () {
-                          onDecline(request['requestId'] ?? '');
-                          ScaffoldMessenger.of(context).showSnackBar(
-                            const SnackBar(
-                              content: Text('Request declined'),
-                              backgroundColor: AppColors.error,
-                            ),
-                          );
-                        },
-                        child: const Text('Decline'),
+                          child: const Text('Send Offer'),
+                        ),
                       ),
-                    ),
-                    const SizedBox(width: 12),
-                    Expanded(
-                      child: ElevatedButton(
-                        onPressed: () => context.push('/fare-offer', extra: {
-                          'requestId': request['requestId'] ?? '',
-                          'offeredFare': request['offeredFare'] ?? 0,
-                          'problemType': request['problemType'] ?? '',
-                        }),
-                        child: const Text('Send Offer'),
-                      ),
-                    ),
-                  ],
-                ),
-              ],
+                    ],
+                  ),
+                ],
+              ),
             ),
-          ),
-        );
-      },
+          );
+        },
+      ),
     );
   }
 }

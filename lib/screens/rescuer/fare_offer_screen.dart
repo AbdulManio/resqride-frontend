@@ -2,6 +2,10 @@ import 'package:flutter/material.dart';
 import 'package:go_router/go_router.dart';
 import '../../core/theme/app_theme.dart';
 import '../../services/request_service.dart';
+import '../../services/socket_service.dart';
+import '../../services/socket_service.dart';
+
+bool _isWaiting = false;
 
 class FareOfferScreen extends StatefulWidget {
   final String requestId;
@@ -30,6 +34,14 @@ class _FareOfferScreenState extends State<FareOfferScreen> {
         TextEditingController(text: widget.offeredFare.toString());
   }
 
+  @override
+  void dispose() {
+    _fareController.dispose();
+    SocketService.off('offer:accepted');
+    SocketService.off('offer:rejected');
+    super.dispose();
+  }
+
   Future<void> _sendOffer() async {
     final fare = int.tryParse(_fareController.text) ?? 0;
 
@@ -55,16 +67,60 @@ class _FareOfferScreenState extends State<FareOfferScreen> {
     if (!mounted) return;
 
     if (response['success'] == true) {
+      setState(() => _isWaiting = true);
+
       ScaffoldMessenger.of(context).showSnackBar(
         const SnackBar(
-          content: Text('✅ Offer sent! Waiting for customer...'),
-          backgroundColor: Colors.green,
-        ),
+            content: Text('✅ Offer sent! Waiting for customer...'),
+            backgroundColor: Colors.green),
       );
 
-      // Listen for offer accepted via socket
-      // Go back to dashboard and wait
-      context.pop();
+      SocketService.onOfferAccepted((data) {
+        if (mounted) {
+          setState(() => _isWaiting = false);
+
+          context.push('/navigation-map', extra: {
+            'requestId': data['requestId']?.toString() ?? widget.requestId,
+            'customerLat': (data['customerLocation']?['coordinates']?[1] ?? 0.0)
+                .toDouble(),
+            'customerLng': (data['customerLocation']?['coordinates']?[0] ?? 0.0)
+                .toDouble(),
+            'customerName': 'Customer',
+            'problemType': widget.problemType,
+            'finalFare': data['finalFare'] ?? widget.offeredFare,
+          });
+        }
+      });
+
+// Auto-cancel after 2 minutes if no response
+      Future.delayed(const Duration(minutes: 2), () {
+        if (mounted && _isWaiting) {
+          setState(() => _isWaiting = false);
+
+          SocketService.off('offer:accepted');
+          SocketService.off('offer:rejected');
+
+          ScaffoldMessenger.of(context).showSnackBar(
+            const SnackBar(
+              content: Text('No response from customer. Offer expired.'),
+              backgroundColor: Colors.orange,
+            ),
+          );
+
+          context.pop();
+        }
+      });
+
+      SocketService.onOfferRejected((data) {
+        if (mounted) {
+          setState(() => _isWaiting = false);
+          ScaffoldMessenger.of(context).showSnackBar(
+            const SnackBar(
+                content: Text('❌ Offer rejected'), backgroundColor: Colors.red),
+          );
+          context.pop();
+        }
+      });
     } else {
       ScaffoldMessenger.of(context).showSnackBar(
         SnackBar(
@@ -122,8 +178,8 @@ class _FareOfferScreenState extends State<FareOfferScreen> {
               children: [
                 _OfferButton(
                     label: '${widget.offeredFare}',
-                    onTap: () => _fareController.text =
-                        widget.offeredFare.toString()),
+                    onTap: () =>
+                        _fareController.text = widget.offeredFare.toString()),
                 const SizedBox(width: 8),
                 _OfferButton(
                     label: '${widget.offeredFare + 100}',
@@ -153,18 +209,38 @@ class _FareOfferScreenState extends State<FareOfferScreen> {
             const Spacer(),
 
             // ─── Send Button ──────────────────────────────────────────
-            ElevatedButton(
-              onPressed: _isLoading ? null : _sendOffer,
-              style: ElevatedButton.styleFrom(
-                minimumSize: const Size.fromHeight(56),
-                backgroundColor: AppColors.primary,
-              ),
-              child: _isLoading
-                  ? const CircularProgressIndicator(color: Colors.white)
-                  : const Text('Send Offer',
-                      style:
-                          TextStyle(fontSize: 18, fontWeight: FontWeight.bold)),
-            ),
+            _isWaiting
+                ? Column(
+                    children: [
+                      const CircularProgressIndicator(),
+                      const SizedBox(height: 16),
+                      const Text('Waiting for customer to accept...',
+                          textAlign: TextAlign.center),
+                      const SizedBox(height: 24),
+                      OutlinedButton(
+                        onPressed: () {
+                          SocketService.off('offer:accepted');
+                          SocketService.off('offer:rejected');
+                          context.pop();
+                        },
+                        child: const Text('Cancel & Go Back'),
+                      ),
+                    ],
+                  )
+                : ElevatedButton(
+                    onPressed: _isLoading ? null : _sendOffer,
+                    style: ElevatedButton.styleFrom(
+                      minimumSize: const Size.fromHeight(56),
+                      backgroundColor: AppColors.primary,
+                    ),
+                    child: _isLoading
+                        ? const CircularProgressIndicator(color: Colors.white)
+                        : const Text('Send Offer',
+                            style: TextStyle(
+                                fontSize: 18,
+                                fontWeight: FontWeight.bold,
+                                color: Colors.white)),
+                  ),
             const SizedBox(height: 24),
           ],
         ),
